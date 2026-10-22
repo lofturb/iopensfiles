@@ -10,6 +10,7 @@ static NSString * const kShowDetails = @"IO.showDetails";
 static NSString * const kThumbnails = @"IO.thumbnails";
 static NSString * const kShowExtensions = @"IO.showExtensions";
 static NSString * const kAskBeforeOverwrite = @"IO.askBeforeOverwrite";
+static NSString * const kTrashEnabled = @"IO.trashEnabled";
 static NSString * const kStartPath = @"IO.startPath";
 static NSString * const kOpenAtLastPath = @"IO.openAtLastPath";
 static NSString * const kLastPath = @"IO.lastPath";
@@ -52,8 +53,9 @@ static NSString * const kLastPath = @"IO.lastPath";
         kThumbnails: @YES,
         kShowExtensions: @YES,
         kAskBeforeOverwrite: @YES,
+        kTrashEnabled: @YES,
         kStartPath: @"/",
-        kOpenAtLastPath: @YES,
+        kOpenAtLastPath: @NO,
         kLastPath: @"/"
     };
     [self.defaults registerDefaults:porDefecto];
@@ -90,6 +92,9 @@ static NSString * const kLastPath = @"IO.lastPath";
 
 - (BOOL)askBeforeOverwrite { return [self.defaults boolForKey:kAskBeforeOverwrite]; }
 - (void)setAskBeforeOverwrite:(BOOL)v { [self.defaults setBool:v forKey:kAskBeforeOverwrite]; [self save]; }
+
+- (BOOL)trashEnabled { return [self.defaults boolForKey:kTrashEnabled]; }
+- (void)setTrashEnabled:(BOOL)v { [self.defaults setBool:v forKey:kTrashEnabled]; [self save]; }
 
 - (NSString *)startPath {
     NSString *valor = [self.defaults stringForKey:kStartPath];

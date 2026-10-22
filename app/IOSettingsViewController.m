@@ -4,6 +4,9 @@
 #import "IOSettings.h"
 #import "IOFileIcons.h"
 #import "IOHelpers.h"
+#import "IODialog.h"
+#import "IOTrash.h"
+#import "IOProgressHUD.h"
 
 @interface IOSettingsViewController () <UITableViewDataSource, UITableViewDelegate>
 
@@ -75,6 +78,10 @@
             @{ @"t": @"Avisar antes de sobrescribir", @"tipo": @"switch", @"k": @"askBeforeOverwrite" },
             @{ @"t": @"Abrir en la ultima carpeta", @"tipo": @"switch", @"k": @"openAtLastPath" }
         ]},
+        @{ @"t": @"Papelera y almacenamiento", @"filas": @[
+            @{ @"t": @"Mover a la papelera al borrar", @"tipo": @"switch", @"k": @"trashEnabled" },
+            @{ @"t": @"Vaciar papelera", @"tipo": @"accion", @"k": @"emptyTrash" }
+        ]},
         @{ @"t": @"Arranque", @"filas": @[
             @{ @"t": @"Carpeta de inicio", @"tipo": @"detalle", @"k": @"startPath" }
         ]},
@@ -99,8 +106,26 @@
     IOTheme *tema = [IOTheme shared];
     self.view.backgroundColor = tema.background;
     self.tabla.backgroundColor = tema.background;
+    UIView *fondo = [[UIView alloc] init];
+    fondo.backgroundColor = tema.background;
+    self.tabla.backgroundView = fondo;
     self.tabla.separatorColor = tema.separator;
+    self.tabla.indicatorStyle = tema.dark ? UIScrollViewIndicatorStyleWhite
+                                          : UIScrollViewIndicatorStyleDefault;
+    for (UISwitch *interruptor in self.interruptores.allValues) {
+        interruptor.onTintColor = tema.accent;
+    }
     [self.tabla reloadData];
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view
+       forSection:(NSInteger)section {
+    if ([view isKindOfClass:[UITableViewHeaderFooterView class]]) {
+        UITableViewHeaderFooterView *cabecera = (UITableViewHeaderFooterView *)view;
+        cabecera.textLabel.textColor = [IOTheme shared].textTertiary;
+        cabecera.textLabel.font = [UIFont systemFontOfSize:12.0 weight:UIFontWeightSemibold];
+        cabecera.contentView.backgroundColor = [IOTheme shared].background;
+    }
 }
 
 #pragma mark - Tabla
@@ -165,12 +190,28 @@
         celda.detailTextLabel.text = version ?: @"1.0.0";
         celda.selectionStyle = UITableViewCellSelectionStyleNone;
     } else {
-        celda.textLabel.textColor = [clave isEqualToString:@"reset"] ? tema.danger : tema.accent;
+        BOOL peligro = ([clave isEqualToString:@"reset"] ||
+                        [clave isEqualToString:@"emptyTrash"]);
+        celda.textLabel.textColor = peligro ? tema.danger : tema.accent;
         celda.textLabel.font = [tema fontHeadline];
-        celda.textLabel.textAlignment = NSTextAlignmentCenter;
+        if ([clave isEqualToString:@"emptyTrash"]) {
+            NSUInteger cantidad = [IOTrash shared].count;
+            celda.textLabel.textAlignment = NSTextAlignmentLeft;
+            celda.detailTextLabel.font = [tema fontSubhead];
+            celda.detailTextLabel.textColor = tema.textSecondary;
+            celda.detailTextLabel.text = cantidad
+                ? [NSString stringWithFormat:@"%lu elementos", (unsigned long)cantidad]
+                : @"Vacia";
+            celda.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        } else {
+            celda.textLabel.textAlignment = NSTextAlignmentCenter;
+        }
         celda.selectionStyle = UITableViewCellSelectionStyleDefault;
     }
 
+    UIView *fondoSeleccion = [[UIView alloc] init];
+    fondoSeleccion.backgroundColor = tema.selectionFill;
+    celda.selectedBackgroundView = fondoSeleccion;
     return celda;
 }
 
@@ -196,8 +237,12 @@
         } else if ([clave isEqualToString:@"startPath"]) {
             [self preguntarCarpetaInicio];
         }
-    } else if ([tipo isEqualToString:@"accion"] && [clave isEqualToString:@"reset"]) {
-        [self confirmarReset];
+    } else if ([tipo isEqualToString:@"accion"]) {
+        if ([clave isEqualToString:@"reset"]) {
+            [self confirmarReset];
+        } else if ([clave isEqualToString:@"emptyTrash"]) {
+            [self vaciarPapelera];
+        }
     }
 }
 
@@ -215,81 +260,90 @@
 
 - (void)preguntarOrden {
     IOSettings *ajustes = [IOSettings shared];
-    UIAlertController *hoja = [UIAlertController
-        alertControllerWithTitle:@"Ordenar por" message:nil
-                  preferredStyle:UIAlertControllerStyleActionSheet];
+    NSMutableArray<IODialogAction *> *acciones = [NSMutableArray array];
+    __weak IOSettingsViewController *debil = self;
     NSArray *opciones = @[ @[ @"Nombre", @(IOSortByName) ],
                            @[ @"Tipo", @(IOSortByKind) ],
                            @[ @"Fecha", @(IOSortByDate) ],
                            @[ @"Tamano", @(IOSortBySize) ] ];
     for (NSArray *opcion in opciones) {
-        [hoja addAction:[UIAlertAction actionWithTitle:opcion[0]
-            style:UIAlertActionStyleDefault
-            handler:^(UIAlertAction *a) {
-            ajustes.sortKey = (IOSortKey)[opcion[1] integerValue];
-            [self.tabla reloadData];
-        }]];
+        IOSortKey clave = (IOSortKey)[opcion[1] integerValue];
+        BOOL activo = (ajustes.sortKey == clave);
+        [acciones addObject:[IODialogAction actionWithTitle:
+            [NSString stringWithFormat:@"%@%@", activo ? @"\u2713 " : @"", opcion[0]]
+            style:(activo ? IODialogActionStyleSelected : IODialogActionStyleDefault)
+            handler:^{
+                ajustes.sortKey = clave;
+                [debil.tabla reloadData];
+            }]];
     }
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
-    [self presentarHoja:hoja desdeIndice:[NSIndexPath indexPathForRow:0 inSection:2]];
+    [IODialog showSheetIn:self title:@"Ordenar por" actions:acciones];
 }
 
 - (void)preguntarCarpetaInicio {
     IOSettings *ajustes = [IOSettings shared];
-    UIAlertController *alerta = [UIAlertController
-        alertControllerWithTitle:@"Carpeta de inicio" message:nil
-                  preferredStyle:UIAlertControllerStyleAlert];
-    [alerta addTextFieldWithConfigurationHandler:^(UITextField *campo) {
-        campo.text = ajustes.startPath;
-        campo.placeholder = @"/";
+    IODialog *dialogo = [IODialog alertWithTitle:@"Carpeta de inicio" message:nil];
+    UITextField *campo = [dialogo addTextFieldWithPlaceholder:@"/" text:ajustes.startPath];
+    __weak IOSettingsViewController *debil = self;
+    [dialogo addAction:@"Cancelar" style:IODialogActionStyleCancel handler:nil];
+    [dialogo addAction:@"Guardar" style:IODialogActionStyleDefault handler:^{
+        NSString *texto = campo.text;
+        if (texto.length) {
+            ajustes.startPath = texto;
+            [debil.tabla reloadData];
+        }
     }];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Guardar" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
-            NSString *texto = alerta.textFields.firstObject.text;
-            if (texto.length) {
-                ajustes.startPath = texto;
-                [self.tabla reloadData];
-            }
-        }]];
-    [self presentViewController:alerta animated:YES completion:nil];
+    [dialogo presentIn:self];
 }
 
 - (void)confirmarReset {
-    UIAlertController *alerta = [UIAlertController
-        alertControllerWithTitle:@"Restablecer ajustes"
-                         message:@"Se borraran los ajustes, favoritos y recientes."
-                  preferredStyle:UIAlertControllerStyleAlert];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Restablecer"
-        style:UIAlertActionStyleDestructive
-        handler:^(UIAlertAction *a) {
-            NSString *dominio = [[NSBundle mainBundle] bundleIdentifier];
-            [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:dominio];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [IOTheme applyDark:NO];
-            [self.tabla reloadData];
-        }]];
-    [self presentViewController:alerta animated:YES completion:nil];
+    __weak IOSettingsViewController *debil = self;
+    [IODialog showConfirmIn:self
+                      title:@"Restablecer ajustes"
+                    message:@"Se borraran los ajustes, favoritos, recientes y el contenido de la papelera."
+                destructive:YES
+               confirmTitle:@"Restablecer"
+                    handler:^{
+        NSString *dominio = [[NSBundle mainBundle] bundleIdentifier];
+        [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:dominio];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [[IOTrash shared] emptyWithError:NULL];
+        [IOTheme applyDark:NO];
+        [debil.tabla reloadData];
+    }];
 }
 
-- (void)presentarHoja:(UIAlertController *)hoja desdeIndice:(NSIndexPath *)indice {
-    UIPopoverPresentationController *popover = hoja.popoverPresentationController;
-    if (popover) {
-        UITableViewCell *celda = [self.tabla cellForRowAtIndexPath:indice];
-        if (celda) {
-            popover.sourceView = celda;
-            popover.sourceRect = celda.bounds;
-        } else {
-            popover.sourceView = self.view;
-            popover.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds),
-                                            CGRectGetMidY(self.view.bounds), 1, 1);
-        }
+- (void)vaciarPapelera {
+    NSUInteger cantidad = [IOTrash shared].count;
+    if (cantidad == 0) {
+        [IODialog showAlertIn:self title:@"Papelera" message:@"La papelera ya esta vacia."];
+        return;
     }
-    [self presentViewController:hoja animated:YES completion:nil];
+    unsigned long long tamano = [[IOTrash shared] totalSize];
+    NSString *mensaje = [NSString stringWithFormat:
+        @"Se borraran %lu elementos (%@) para siempre.",
+        (unsigned long)cantidad, [IOHelpers humanSize:tamano]];
+    __weak IOSettingsViewController *debil = self;
+    [IODialog showConfirmIn:self
+                      title:@"Vaciar papelera"
+                    message:mensaje
+                destructive:YES
+               confirmTitle:@"Vaciar"
+                    handler:^{
+        IOSettingsViewController *fuerte = debil;
+        if (!fuerte) { return; }
+        [[IOProgressHUD shared] showInView:fuerte.view message:@"Vaciando papelera"];
+        [[IOProgressHUD shared] updateProgress:-1.0];
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSError *error = nil;
+            BOOL ok = [[IOTrash shared] emptyWithError:&error];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[IOProgressHUD shared] hide];
+                if (!ok) { [IODialog showErrorIn:fuerte error:error]; }
+                [fuerte.tabla reloadData];
+            });
+        });
+    }];
 }
 
 @end

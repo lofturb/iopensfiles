@@ -3,12 +3,13 @@
 Gestor de archivos con **acceso al sistema completo** para iPad/iPhone de
 **32 bits con iOS 9**. Nace del kit `Guia-IPA-iOS9` (Theos + GitHub Actions, sin
 Mac) y toma como referencia el conjunto de funciones de **Filza**, con una
-interfaz propia más limpia: barra lateral, tarjetas, iconos de línea dibujados a
-mano y modo claro/oscuro.
+interfaz propia más limpia: pantalla de inicio con tarjetas de almacenamiento,
+barra lateral, diálogos propios, iconos de línea dibujados a mano y modo
+claro/oscuro completo.
 
 - **Dispositivo objetivo:** iPad mini 1 (iPad2,6), iOS 9.3.6, armv7f, 512 MB,
   1024×768 (no retina).
-- **Bundle:** `com.lofturb.iopensfiles` — versión `1.0.0`.
+- **Bundle:** `com.lofturb.iopensfiles` — versión `1.1.0`.
 - **Sin Mac, sin Xcode, sin Swift, sin storyboards.** Todo Objective-C, en
   código, compilado con Theos e firmado con `ldid`.
 
@@ -16,21 +17,43 @@ mano y modo claro/oscuro.
 
 ## Qué hace
 
-**Navegación**
+**Inicio y navegación**
+- **Pantalla de inicio** con una tarjeta por volumen montado (Sistema, Datos,
+  Medios): uso, espacio libre, porcentaje y acceso directo a esa raíz.
+- Accesos rápidos a limpieza, instalador de IPA, papelera, favoritos,
+  recientes y cachés; información del sistema y ajustes.
 - Recorre todo el sistema de ficheros: `/`, `/var`, `/Applications`, `/System`,
   contenedores de apps...
 - Barra lateral con Lugares, Favoritos y Recientes; se ve dividida en
   horizontal y se superpone en vertical.
 - Ruta visible bajo el título, apertura de carpetas apilando navegadores.
 - Búsqueda **recursiva** desde la carpeta actual (hasta 500 resultados).
+- «Ir a una ruta...» y «Ir a la raíz» desde el menú y desde Inicio.
 
 **Operaciones**
 - Crear carpeta y archivo, renombrar, duplicar, copiar, cortar y pegar.
-- Borrado recursivo con confirmación opcional.
-- **Selección múltiple** con barra de acciones (compartir, copiar, mover,
-  comprimir, borrar).
+- **Papelera interna** (opcional): los borrados del navegador se pueden
+  restaurar; desde la papelera también se puede borrar para siempre o vaciarla.
+- **Selección múltiple**: todo, nada, invertir o seleccionar por tipo
+  (imágenes, vídeos, audio, documentos, carpetas), además de pulsar filas.
 - Progreso y cancelación en las operaciones largas.
 - Si al pegar hay colisión de nombres: reemplazar, conservar ambos o cancelar.
+
+**Limpieza y espacio**
+- **Examinar y limpiar**: analiza una carpeta (o todo el sistema) y agrupa los
+  archivos por tipo con el peso total y por categoría.
+- Lista de los archivos más grandes, con selección múltiple y borrado
+  **permanente** solo de lo que el usuario marque.
+- Omite por defecto zonas críticas (`/System`, `/usr`, `/bin`, `/Applications`,
+  `/Library`, contenedores de apps, `PhotoData`, etc.). **Nada se borra solo.**
+- Acceso directo a cachés y temporales para liberar espacio.
+
+**Instalador de IPA**
+- Detecta los `.ipa` de Medios, Documentos y Descargas, o permite elegirlos con
+  un explorador en modo selector.
+- Extrae el paquete en una carpeta temporal, lee el bundle ID e instala con
+  `MobileInstallation`, con alternativa vía LaunchServices y al `.ipa` directo.
+- Al terminar ofrece abrir la app instalada.
 
 **Permisos y propiedades**
 - Modo Unix (`rwxr-xr-x`), **chmod octal** y **chown** de dueño y grupo, con
@@ -43,14 +66,17 @@ mano y modo claro/oscuro.
   tamaño de fuente ajustable.
 - **Imágenes**: pantalla completa, zoom (pellizco y doble toque) y paso entre
   las imágenes de la carpeta.
-- **Audio y vídeo**: `AVPlayer` con barra de progreso; audio en segundo plano.
+- **Audio y vídeo**: `AVPlayer` con lista de la carpeta, aleatorio, repetir
+  (todo/una), anterior/siguiente, control de velocidad, carátula ID3 y audio en
+  segundo plano.
 - **ZIP**: comprimir y extraer, con listado del contenido.
 
 **Integración**
-- Compartir / «Abrir con» (hoja de iOS y apps compatibles).
+- Compartir / «Abrir con»: primero una hoja propia y, al elegir «Compartir con
+  apps…», el selector del sistema (la única pieza que no se puede rediseñar).
 - Favoritos y recientes persistentes.
-- Tema claro/oscuro y ajustes de orden (nombre, tipo, fecha, tamaño), ocultos,
-  carpetas primero, detalles, miniaturas y extensiones.
+- Tema claro/oscuro completo y ajustes de orden (nombre, tipo, fecha, tamaño),
+  ocultos, carpetas primero, detalles, miniaturas y extensiones.
 
 ---
 
@@ -72,7 +98,7 @@ La vía recomendada es **GitHub Actions** (no hace falta Mac):
 ```powershell
 git init
 git add .
-git commit -m "IOpenFiles 1.0.0"
+git commit -m "IOpenFiles 1.1.0"
 git remote add origin https://github.com/TU-USUARIO/iopensfiles.git
 git push -u origin main
 ```
@@ -88,6 +114,12 @@ python tools\afc_put.py IOpenFiles.ipa /IOpenFiles.ipa
 ```
 
 En el iPad: **Filza → /var/mobile/Media → IOpenFiles.ipa → Instalar**.
+
+También se puede instalar directamente por USB con `libimobiledevice`:
+
+```powershell
+ideviceinstaller -u UDID-DEL-IPAD -i IOpenFiles.ipa
+```
 
 Alternativa sin cable: `entrega-web/` con `servir.py` en el puerto 80 y abrir
 `http://IP-DEL-PC/` en Safari (PASO 1 certificados → PASO 2 la app).
@@ -116,7 +148,7 @@ usuario `mobile` (`/var/mobile`, `/private/var`, `/var/mobile/Media`, ...).
 `/Applications`, algunas preferencias del sistema) dependen de los permisos Unix
 y, como en Filza, requieren un **helper con root**: bien instalar la app/paquete
 desde un `.deb` de Cydia con el binario propiedad de `root` y bit `setuid`, bien
-un demonio auxiliar. Esta versión 1.0 hace las operaciones directamente; si el
+un demonio auxiliar. Esta versión hace las operaciones directamente; si el
 sistema devuelve «permission denied», es ese límite, no un fallo de la app.
 
 ---
@@ -140,15 +172,22 @@ IOpenFiles/
 │   ├── IOStore.h/.m             favoritos, recientes y portapapeles
 │   ├── IOFileIcons.h/.m         glifos de linea + iconos + miniaturas
 │   ├── IOProgressHUD.h/.m       tarjeta de progreso con cancelacion
+│   ├── IODialog.h/.m            alertas y hojas propias (sustituyen a UIAlertController)
+│   ├── IOTrash.h/.m             papelera interna y su indice
+│   ├── IOTrashViewController    lista de la papelera (restaurar/vaciar)
+│   ├── IOIPAInstaller.h/.m      instalacion de .ipa (MobileInstallation)
+│   ├── IOInstallViewController  pantalla del instalador
+│   ├── IOAnalyzerViewController analizador por tipo con borrado selectivo
+│   ├── IOHomeViewController     inicio: volumenes, accesos rapidos y recientes
 │   ├── IOFileCell.h/.m          fila de la lista
 │   ├── IOSidebarViewController  panel lateral
 │   ├── IOFilesViewController    navegador y todas las acciones
 │   ├── IOPropertiesViewController  propiedades, chmod/chown
 │   ├── IOTextEditorViewController  visor/editor de texto
 │   ├── IOImageViewController    visor de imagenes
-│   ├── IOMediaPlayerViewController reproductor AVPlayer
-│   ├── IOSettingsViewController    ajustes
-│   ├── IORootContainerViewController  lateral + navegador
+│   ├── IOMediaPlayerViewController reproductor con lista, aleatorio y velocidad
+│   ├── IOSettingsViewController    ajustes, papelera y mantenimiento
+│   ├── IORootContainerViewController  lateral + navegador (Inicio como raiz)
 │   └── Resources/               Info.plist, iconos y arranque (generados)
 ├── tools/                       scripts (recursos, verificacion, AFC, simbolizar)
 ├── entrega-web/                 pagina HTTP + servir.py
@@ -160,9 +199,12 @@ IOpenFiles/
 ## Como se construye la interfaz
 
 - **Todo por codigo**: `UIViewController`, `UITableView`, `UIToolbar`,
-  `UIAlertController`, Auto Layout a mano. Nada de storyboards ni XIB.
+  Auto Layout a mano. Nada de storyboards ni XIB.
+- **Diálogos propios**: `IODialog` dibuja alertas centradas y hojas inferiores
+  con el mismo tema; en toda la app no se usa `UIAlertController`.
 - **Sistema de diseno** en `IOTheme`: una sola bandera (`dark`) cambia toda la
-  paleta; los colores salen de ahí.
+  paleta; los colores salen de ahí. En oscuro se tiñen también ventanas,
+  barras, tablas, buscadores, teclados y hojas.
 - **Iconos**: `IOFileIcons` dibuja cada glifo con `UIBezierPath` en coordenadas
   0..1, con trazo redondeado (estilo línea minimalista). Los archivos se pintan
   como un cuadrado redondeado con fondo tintado suave + glifo; las imágenes

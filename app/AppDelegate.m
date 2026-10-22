@@ -22,17 +22,15 @@
     self.window.rootViewController = raiz;
     [self.window makeKeyAndVisible];
 
+    // Con la ventana ya visible, applyDark fija tambien la barra de estado.
+    [IOTheme applyDark:ajustes.darkMode];
+
     // Que el audio siga sonando si el usuario bloquea la pantalla mientras suena
     // un archivo de musica o un video.
     NSError *errorSesion = nil;
     AVAudioSession *sesion = [AVAudioSession sharedInstance];
     [sesion setCategory:AVAudioSessionCategoryPlayback error:&errorSesion];
     [sesion setActive:YES error:&errorSesion];
-
-    // Avisa a las vistas de que el tema ya esta listo.
-    [[NSNotificationCenter defaultCenter]
-        postNotificationName:IOThemeDidChangeNotification
-                      object:nil];
 
     return YES;
 }

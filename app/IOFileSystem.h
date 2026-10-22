@@ -66,4 +66,11 @@ typedef BOOL (^IOCancelBlock)(void);
 // --- Recursivo ---
 - (NSArray<NSString *> *)allPathsUnderPath:(NSString *)path;
 
+// --- Volumenes y zonas sensibles ---
+// Cada diccionario: name, path, device, fsType, total (NSNumber), free (NSNumber).
+- (NSArray<NSDictionary *> *)mountedVolumes;
+
+// Zonas del sistema que el limpiador nunca debe ofrecer para borrar.
+- (BOOL)isProtectedPath:(NSString *)path;
+
 @end

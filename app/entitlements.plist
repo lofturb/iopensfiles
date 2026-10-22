@@ -41,6 +41,19 @@
 		<string>/System/</string>
 	</array>
 
+	<!-- Instalacion de paquetes .ipa desde la propia app (MobileInstallation). -->
+	<key>com.apple.private.mobileinstall.allowedSPI</key>
+	<array>
+		<string>Install</string>
+		<string>InstallForLaunchServices</string>
+		<string>Upgrade</string>
+		<string>Uninstall</string>
+		<string>Lookup</string>
+		<string>Browse</string>
+	</array>
+	<key>com.apple.private.mobileinstall.upgrade-enabled</key>
+	<true/>
+
 	<key>get-task-allow</key>
 	<true/>
 </dict>

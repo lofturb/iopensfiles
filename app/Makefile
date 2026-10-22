@@ -29,6 +29,13 @@ IOpenFiles_FILES = \
 	IOFileIcons.m \
 	IOProgressHUD.m \
 	IOFileCell.m \
+	IODialog.m \
+	IOTrash.m \
+	IOTrashViewController.m \
+	IOIPAInstaller.m \
+	IOInstallViewController.m \
+	IOAnalyzerViewController.m \
+	IOHomeViewController.m \
 	IOSidebarViewController.m \
 	IOFilesViewController.m \
 	IOPropertiesViewController.m \

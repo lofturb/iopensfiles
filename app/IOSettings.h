@@ -22,6 +22,7 @@ typedef NS_ENUM(NSInteger, IOSortKey) {
 @property (nonatomic, assign) BOOL thumbnails;        // miniaturas de imagenes
 @property (nonatomic, assign) BOOL showExtensions;    // mostrar la extension
 @property (nonatomic, assign) BOOL askBeforeOverwrite;// avisar antes de sobrescribir
+@property (nonatomic, assign) BOOL trashEnabled;      // mover a la papelera al borrar
 @property (nonatomic, copy)   NSString *startPath;    // carpeta de arranque
 @property (nonatomic, assign) BOOL openAtLastPath;    // recordar la ultima carpeta
 @property (nonatomic, copy)   NSString *lastPath;     // ultima carpeta visitada

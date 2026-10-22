@@ -6,6 +6,7 @@
 #import "IOFileSystem.h"
 #import "IOFilesViewController.h"
 #import "IOSidebarViewController.h"
+#import "IOHomeViewController.h"
 
 static const CGFloat IOAnchoLateral = 320.0;
 static const CGFloat IOUmbralDiv = 900.0;
@@ -56,15 +57,13 @@ static const CGFloat IOUmbralDiv = 900.0;
 
 - (void)construirNavegador {
     IOSettings *ajustes = [IOSettings shared];
-    NSString *inicio = ajustes.openAtLastPath ? ajustes.lastPath : ajustes.startPath;
-    if (inicio.length == 0) { inicio = @"/"; }
 
-    IOFilesViewController *raiz = [[IOFilesViewController alloc] initWithPath:inicio];
-    raiz.showsSidebarToggle = YES;
+    IOHomeViewController *inicio = [[IOHomeViewController alloc] init];
+    inicio.showsSidebarToggle = YES;
     __weak IORootContainerViewController *debil = self;
-    raiz.onSidebarToggle = ^{ [debil alternarLateral]; };
+    inicio.onSidebarToggle = ^{ [debil alternarLateral]; };
 
-    self.navegador = [[UINavigationController alloc] initWithRootViewController:raiz];
+    self.navegador = [[UINavigationController alloc] initWithRootViewController:inicio];
     self.navegador.delegate = self;
     self.navegador.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self addChildViewController:self.navegador];
@@ -72,6 +71,21 @@ static const CGFloat IOUmbralDiv = 900.0;
     [self.navegador didMoveToParentViewController:self];
 
     [self aplicarTemaNavegacion];
+
+    // Si el usuario activo "abrir en la ultima carpeta", se apila encima de la
+    // pantalla de inicio: atras siempre vuelve al inicio. La raiz "/" no cuenta
+    // como "ultima carpeta" para que el arranque normal muestre Inicio.
+    if (ajustes.openAtLastPath && ajustes.lastPath.length &&
+        ![ajustes.lastPath isEqualToString:@"/"]) {
+        BOOL esDir = NO;
+        if ([[IOFileSystem shared] fileExistsAtPath:ajustes.lastPath isDirectory:&esDir] && esDir) {
+            IOFilesViewController *vc =
+                [[IOFilesViewController alloc] initWithPath:ajustes.lastPath];
+            vc.showsSidebarToggle = YES;
+            vc.onSidebarToggle = ^{ [debil alternarLateral]; };
+            [self.navegador pushViewController:vc animated:NO];
+        }
+    }
 }
 
 - (void)construirAtenuar {
@@ -98,6 +112,7 @@ static const CGFloat IOUmbralDiv = 900.0;
 - (void)aplicarTemaNavegacion {
     IOTheme *tema = [IOTheme shared];
     UINavigationBar *barraNav = self.navegador.navigationBar;
+    barraNav.translucent = NO;
     barraNav.barTintColor = tema.cardBackground;
     barraNav.tintColor = tema.accent;
     barraNav.barStyle = tema.dark ? UIBarStyleBlack : UIBarStyleDefault;
@@ -181,13 +196,15 @@ static const CGFloat IOUmbralDiv = 900.0;
 
 - (void)sidebar:(IOSidebarViewController *)sidebar didSelectPath:(NSString *)path {
     [self.navegador popToRootViewControllerAnimated:NO];
-    IOFilesViewController *raiz =
-        (IOFilesViewController *)self.navegador.viewControllers.firstObject;
-    if ([raiz isKindOfClass:[IOFilesViewController class]]) {
-        raiz.path = path;
-    }
+    IOFilesViewController *vc = [[IOFilesViewController alloc] initWithPath:path];
+    vc.showsSidebarToggle = YES;
+    __weak IORootContainerViewController *debil = self;
+    vc.onSidebarToggle = ^{ [debil alternarLateral]; };
+    [self.navegador pushViewController:vc animated:YES];
+
     [IOSettings shared].lastPath = path;
-    [self actualizarSeleccionLateral];
+    self.lateral.selectedPath = path;
+    [self.lateral reloadData];
 
     if (!self.modoDividido) {
         self.lateralVisible = NO;
@@ -204,6 +221,8 @@ static const CGFloat IOUmbralDiv = 900.0;
     if ([superior isKindOfClass:[IOFilesViewController class]]) {
         NSString *ruta = ((IOFilesViewController *)superior).path;
         self.lateral.selectedPath = ruta;
+    } else {
+        self.lateral.selectedPath = nil;
     }
     [self.lateral reloadData];
 }
@@ -217,6 +236,9 @@ static const CGFloat IOUmbralDiv = 900.0;
         self.lateral.selectedPath = ruta;
         [IOSettings shared].lastPath = ruta;
         [[IOStore shared] addRecent:ruta];
+        [self.lateral reloadData];
+    } else if ([viewController isKindOfClass:[IOHomeViewController class]]) {
+        self.lateral.selectedPath = nil;
         [self.lateral reloadData];
     }
 }

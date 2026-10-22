@@ -6,6 +6,7 @@
 #import "IOFileSystem.h"
 #import "IOFileIcons.h"
 #import "IOProgressHUD.h"
+#import "IODialog.h"
 
 @interface IOPropertiesViewController () <UITableViewDataSource, UITableViewDelegate>
 
@@ -159,11 +160,33 @@
     IOTheme *tema = [IOTheme shared];
     self.view.backgroundColor = tema.background;
     self.tabla.backgroundColor = tema.background;
+    UIView *fondo = [[UIView alloc] init];
+    fondo.backgroundColor = tema.background;
+    self.tabla.backgroundView = fondo;
     self.tabla.separatorColor = tema.separator;
+    self.tabla.indicatorStyle = tema.dark ? UIScrollViewIndicatorStyleWhite
+                                          : UIScrollViewIndicatorStyleDefault;
     self.campoOctal.textColor = tema.accent;
     self.campoDueno.textColor = tema.accent;
     self.campoGrupo.textColor = tema.accent;
+    self.campoOctal.keyboardAppearance = tema.dark ? UIKeyboardAppearanceDark
+                                                   : UIKeyboardAppearanceDefault;
+    self.campoDueno.keyboardAppearance = tema.dark ? UIKeyboardAppearanceDark
+                                                   : UIKeyboardAppearanceDefault;
+    self.campoGrupo.keyboardAppearance = tema.dark ? UIKeyboardAppearanceDark
+                                                   : UIKeyboardAppearanceDefault;
+    self.interruptorRecursivo.onTintColor = tema.accent;
     [self.tabla reloadData];
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view
+       forSection:(NSInteger)section {
+    if ([view isKindOfClass:[UITableViewHeaderFooterView class]]) {
+        UITableViewHeaderFooterView *cabecera = (UITableViewHeaderFooterView *)view;
+        cabecera.textLabel.textColor = [IOTheme shared].textTertiary;
+        cabecera.textLabel.font = [UIFont systemFontOfSize:12.0 weight:UIFontWeightSemibold];
+        cabecera.contentView.backgroundColor = [IOTheme shared].background;
+    }
 }
 
 #pragma mark - Tabla
@@ -255,6 +278,9 @@
 
     celda.backgroundColor = tema.cardBackground;
     celda.contentView.backgroundColor = tema.cardBackground;
+    UIView *fondoSeleccion = [[UIView alloc] init];
+    fondoSeleccion.backgroundColor = tema.selectionFill;
+    celda.selectedBackgroundView = fondoSeleccion;
     return celda;
 }
 
@@ -263,12 +289,33 @@
     if (indexPath.section == 2 && indexPath.row == 5) {
         [self aplicarCambios];
     } else if (indexPath.section == 3) {
-        self.docController =
-            [UIDocumentInteractionController interactionControllerWithURL:
-             [NSURL fileURLWithPath:self.ruta]];
-        [self.docController presentOptionsMenuFromRect:self.view.bounds
-                                                inView:self.view
-                                              animated:YES];
+        [self preguntarCompartir];
+    }
+}
+
+- (void)preguntarCompartir {
+    __weak IOPropertiesViewController *debil = self;
+    NSMutableArray<IODialogAction *> *acciones = [NSMutableArray array];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Copiar ruta"
+        style:IODialogActionStyleDefault handler:^{
+            [[UIPasteboard generalPasteboard] setString:debil.ruta];
+            [IODialog showAlertIn:debil title:@"Ruta copiada" message:debil.ruta];
+        }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Compartir / Abrir con..."
+        style:IODialogActionStyleDefault handler:^{ [debil compartirConSistema]; }]];
+    [IODialog showSheetIn:self title:@"Acciones" actions:acciones];
+}
+
+- (void)compartirConSistema {
+    self.docController =
+        [UIDocumentInteractionController interactionControllerWithURL:
+         [NSURL fileURLWithPath:self.ruta]];
+    BOOL mostrado = [self.docController presentOptionsMenuFromRect:self.view.bounds
+                                                            inView:self.view
+                                                          animated:YES];
+    if (!mostrado) {
+        [IODialog showAlertIn:self title:@"Sin aplicaciones"
+                      message:@"Ninguna app puede abrir este archivo."];
     }
 }
 
@@ -291,21 +338,11 @@
         self.item = [IOFileItem itemAtPath:self.ruta computeChildCount:YES];
         [self construirInformacion];
         [self.tabla reloadData];
-        UIAlertController *alerta = [UIAlertController
-            alertControllerWithTitle:@"Aplicado"
-                             message:@"Permisos y propietario actualizados."
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [alerta addAction:[UIAlertAction actionWithTitle:@"Vale" style:UIAlertActionStyleDefault
-            handler:nil]];
-        [self presentViewController:alerta animated:YES completion:nil];
+        [IODialog showAlertIn:self title:@"Aplicado"
+                      message:@"Permisos y propietario actualizados."];
     } else {
-        UIAlertController *alerta = [UIAlertController
-            alertControllerWithTitle:@"No se pudo aplicar"
-                             message:error.localizedDescription
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [alerta addAction:[UIAlertAction actionWithTitle:@"Vale" style:UIAlertActionStyleDefault
-            handler:nil]];
-        [self presentViewController:alerta animated:YES completion:nil];
+        [IODialog showAlertIn:self title:@"No se pudo aplicar"
+                      message:error.localizedDescription ?: @"Operacion no completada."];
     }
 }
 

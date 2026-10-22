@@ -10,11 +10,17 @@
 #import "IOFileIcons.h"
 #import "IOFileCell.h"
 #import "IOProgressHUD.h"
+#import "IODialog.h"
+#import "IOTrash.h"
+#import "IOIPAInstaller.h"
 #import "IOPropertiesViewController.h"
 #import "IOTextEditorViewController.h"
 #import "IOImageViewController.h"
 #import "IOMediaPlayerViewController.h"
 #import "IOSettingsViewController.h"
+#import "IOAnalyzerViewController.h"
+#import "IOInstallViewController.h"
+#import "IOTrashViewController.h"
 
 #pragma mark - Token de cancelacion
 
@@ -176,6 +182,7 @@
 
     self.barra = [[UIToolbar alloc] init];
     self.barra.translatesAutoresizingMaskIntoConstraints = NO;
+    self.barra.translucent = NO;
     [self.view addSubview:self.barra];
     [self.view addConstraints:@[
         [NSLayoutConstraint constraintWithItem:self.barra attribute:NSLayoutAttributeLeading
@@ -219,12 +226,64 @@
     self.view.backgroundColor = tema.background;
     self.tabla.backgroundColor = tema.background;
     self.tabla.separatorColor = tema.separator;
+    self.tabla.indicatorStyle = tema.dark ? UIScrollViewIndicatorStyleWhite
+                                          : UIScrollViewIndicatorStyleDefault;
     self.barra.barTintColor = tema.cardBackground;
     self.barra.tintColor = tema.accent;
     self.barra.barStyle = tema.dark ? UIBarStyleBlack : UIBarStyleDefault;
     self.estadoVacio.textColor = tema.textSecondary;
     self.estadoVacio.font = [tema fontBody];
+    [self aplicarTemaAlBuscador];
     [self.tabla reloadData];
+}
+
+- (void)aplicarTemaAlBuscador {
+    IOTheme *tema = [IOTheme shared];
+    UISearchBar *barra = self.buscador.searchBar;
+
+    UIColor *fondoCampo = tema.fieldBackground ?: tema.cardBackground;
+    UIImage *imagenCampo = [self imagenConColor:fondoCampo];
+    [barra setSearchFieldBackgroundImage:imagenCampo forState:UIControlStateNormal];
+    barra.barTintColor = tema.background;
+    barra.backgroundColor = tema.background;
+    barra.tintColor = tema.accent;
+    barra.barStyle = tema.dark ? UIBarStyleBlack : UIBarStyleDefault;
+    barra.searchBarStyle = UISearchBarStyleMinimal;
+    [barra setBackgroundImage:[[UIImage alloc] init]];
+    [self estilizarSubvistasDeBusqueda:barra];
+}
+
+- (UIImage *)imagenConColor:(UIColor *)color {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(12, 12), NO, 0);
+    [color setFill];
+    [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, 12, 12)
+                                    cornerRadius:6] fill];
+    UIImage *imagen = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return [imagen resizableImageWithCapInsets:UIEdgeInsetsMake(6, 6, 6, 6)];
+}
+
+- (void)estilizarSubvistasDeBusqueda:(UIView *)vista {
+    IOTheme *tema = [IOTheme shared];
+    for (UIView *sub in vista.subviews) {
+        if ([sub isKindOfClass:[UITextField class]]) {
+            UITextField *campo = (UITextField *)sub;
+            campo.backgroundColor = tema.fieldBackground ?: tema.cardBackground;
+            campo.textColor = tema.textPrimary;
+            campo.tintColor = tema.accent;
+            campo.borderStyle = UITextBorderStyleNone;
+            campo.layer.cornerRadius = 10.0;
+            campo.layer.masksToBounds = YES;
+            campo.keyboardAppearance = tema.dark ? UIKeyboardAppearanceDark
+                                                 : UIKeyboardAppearanceDefault;
+            campo.attributedPlaceholder = [[NSAttributedString alloc]
+                initWithString:campo.placeholder ?: @""
+                    attributes:@{ NSForegroundColorAttributeName: tema.textTertiary }];
+        } else if ([NSStringFromClass([sub class]) isEqualToString:@"UISearchBarBackground"]) {
+            sub.hidden = YES;
+        }
+        [self estilizarSubvistasDeBusqueda:sub];
+    }
 }
 
 #pragma mark - Ruta y titulo
@@ -297,6 +356,10 @@
     NSMutableArray *filtrados = [NSMutableArray arrayWithCapacity:items.count];
     for (IOFileItem *item in items) {
         if (!ajustes.showHidden && item.isHidden) { continue; }
+        if (self.pickerMode && !item.isDirectory && self.pickerExtensions.count) {
+            NSString *extension = [item.path pathExtension].lowercaseString;
+            if (![self.pickerExtensions containsObject:extension]) { continue; }
+        }
         [filtrados addObject:item];
     }
 
@@ -354,12 +417,27 @@
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     if (self.modoSeleccion) {
-        [self.seleccionados addObject:self.items[indexPath.row]];
+        IOFileItem *item = self.items[indexPath.row];
+        if (![self.seleccionados containsObject:item]) {
+            [self.seleccionados addObject:item];
+        }
         [self actualizarBarra];
         return;
     }
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    [self abrirItem:self.items[indexPath.row]];
+    IOFileItem *item = self.items[indexPath.row];
+    if (self.pickerMode && !item.isDirectory) {
+        NSString *extension = [item.path pathExtension].lowercaseString;
+        if (self.pickerExtensions.count == 0 ||
+            [self.pickerExtensions containsObject:extension]) {
+            if (self.onPick) { self.onPick(item.path); }
+        } else {
+            [IODialog showAlertIn:self title:@"Archivo no valido"
+                          message:@"Selecciona un paquete .ipa."];
+        }
+        return;
+    }
+    [self abrirItem:item];
 }
 
 - (void)tableView:(UITableView *)tableView didDeselectRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -466,19 +544,20 @@
 
     if (self.modoSeleccion) {
         NSUInteger n = self.seleccionados.count;
+        UIBarButtonItem *todo = [self itemGlifo:IOGlyphCheck accion:@selector(accionSeleccionarTodo)];
         UIBarButtonItem *compartir = [self itemGlifo:IOGlyphShare accion:@selector(accionCompartir)];
         UIBarButtonItem *copiar = [self itemGlifo:IOGlyphCopy accion:@selector(accionCopiarSeleccion)];
         UIBarButtonItem *mover = [self itemGlifo:IOGlyphPaste accion:@selector(accionCortarSeleccion)];
-        UIBarButtonItem *comprimir = [self itemGlifo:IOGlyphArchive accion:@selector(accionComprimirSeleccion)];
         UIBarButtonItem *borrar = [self itemGlifo:IOGlyphTrash accion:@selector(accionBorrarSeleccion)];
+        UIBarButtonItem *mas = [self itemGlifo:IOGlyphMore accion:@selector(accionMenuSeleccion)];
         borrar.tintColor = tema.danger;
         compartir.enabled = (n > 0);
         copiar.enabled = (n > 0);
         mover.enabled = (n > 0);
-        comprimir.enabled = (n > 0);
         borrar.enabled = (n > 0);
-        self.barra.items = @[ compartir, [self flexible], copiar, [self flexible],
-                              mover, [self flexible], comprimir, [self flexible], borrar ];
+        self.barra.items = @[ todo, [self flexible], compartir, [self flexible],
+                              copiar, [self flexible], mover, [self flexible],
+                              borrar, [self flexible], mas ];
         self.navigationItem.title = [NSString stringWithFormat:@"%lu seleccionados", (unsigned long)n];
     } else {
         UIBarButtonItem *nuevaCarpeta = [self itemGlifo:IOGlyphNewFolder accion:@selector(accionNuevaCarpeta)];
@@ -526,6 +605,9 @@
 - (void)abrirItem:(IOFileItem *)item {
     if (item.isDirectory) {
         IOFilesViewController *vc = [[IOFilesViewController alloc] initWithPath:item.path];
+        vc.pickerMode = self.pickerMode;
+        vc.pickerExtensions = self.pickerExtensions;
+        vc.onPick = self.onPick;
         [self.navigationController pushViewController:vc animated:YES];
         return;
     }
@@ -572,60 +654,95 @@
 
 - (void)presentarMenu:(id)origen {
     IOSettings *ajustes = [IOSettings shared];
-    UIAlertController *hoja = [UIAlertController
-        alertControllerWithTitle:nil
-                         message:self.path
-                  preferredStyle:UIAlertControllerStyleActionSheet];
+    NSMutableArray<IODialogAction *> *acciones = [NSMutableArray array];
+    __weak IOFilesViewController *debil = self;
 
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Ordenar..." style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) { [self presentarOrdenar:nil]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Ordenar..."
+        style:IODialogActionStyleDefault handler:^{ [debil presentarOrdenar:nil]; }]];
 
     NSString *marcaOcultos = ajustes.showHidden ? @"Ocultar archivos ocultos"
                                                 : @"Mostrar archivos ocultos";
-    [hoja addAction:[UIAlertAction actionWithTitle:marcaOcultos style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
+    [acciones addObject:[IODialogAction actionWithTitle:marcaOcultos
+        style:IODialogActionStyleDefault handler:^{
             ajustes.showHidden = !ajustes.showHidden;
-            [self reloadContents];
+            [debil reloadContents];
         }]];
 
     NSString *marcaDetalles = ajustes.showDetails ? @"Ocultar detalles"
                                                   : @"Mostrar detalles";
-    [hoja addAction:[UIAlertAction actionWithTitle:marcaDetalles style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
+    [acciones addObject:[IODialogAction actionWithTitle:marcaDetalles
+        style:IODialogActionStyleDefault handler:^{
             ajustes.showDetails = !ajustes.showDetails;
-            [self.tabla reloadData];
+            [debil.tabla reloadData];
         }]];
 
     NSString *marcaFav = [[IOStore shared] isFavorite:self.path]
         ? @"Quitar de favoritos" : @"Anadir a favoritos";
-    [hoja addAction:[UIAlertAction actionWithTitle:marcaFav style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
-            [[IOStore shared] toggleFavorite:self.path];
+    [acciones addObject:[IODialogAction actionWithTitle:marcaFav
+        style:IODialogActionStyleDefault handler:^{
+            [[IOStore shared] toggleFavorite:debil.path];
             [[NSNotificationCenter defaultCenter]
                 postNotificationName:@"IOSidebarNeedsReload" object:nil];
         }]];
 
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Ir a la raiz" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) { self.path = @"/"; }]];
-
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Ajustes" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
-            IOSettingsViewController *vc = [[IOSettingsViewController alloc] init];
-            [self.navigationController pushViewController:vc animated:YES];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Analizar esta carpeta"
+        style:IODialogActionStyleDefault handler:^{ [debil analizarCarpetaActual]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Instalar un IPA"
+        style:IODialogActionStyleDefault handler:^{ [debil abrirInstalador]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Papelera"
+        style:IODialogActionStyleDefault handler:^{ [debil abrirPapelera]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Ir a una ruta..."
+        style:IODialogActionStyleDefault handler:^{ [debil preguntarRuta]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Ir a la raiz"
+        style:IODialogActionStyleDefault handler:^{ debil.path = @"/"; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Ajustes"
+        style:IODialogActionStyleDefault handler:^{
+            [debil.navigationController pushViewController:
+                [[IOSettingsViewController alloc] init] animated:YES];
         }]];
 
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
+    [IODialog showSheetIn:self title:self.path actions:acciones];
+}
 
-    [self presentarHoja:hoja desdeOrigen:origen];
+- (void)analizarCarpetaActual {
+    IOAnalyzerViewController *vc = [[IOAnalyzerViewController alloc] initWithPath:self.path];
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
+- (void)abrirInstalador {
+    IOInstallViewController *vc = [[IOInstallViewController alloc] init];
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
+- (void)abrirPapelera {
+    IOTrashViewController *vc = [[IOTrashViewController alloc] init];
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
+- (void)preguntarRuta {
+    IODialog *dialogo = [IODialog alertWithTitle:@"Ir a una ruta"
+                                         message:@"Escribe la ruta completa."];
+    UITextField *campo = [dialogo addTextFieldWithPlaceholder:@"/var/mobile"
+                                                        text:self.path];
+    __weak IOFilesViewController *debil = self;
+    [dialogo addAction:@"Cancelar" style:IODialogActionStyleCancel handler:nil];
+    [dialogo addAction:@"Ir" style:IODialogActionStyleDefault handler:^{
+        NSString *limpio = [[IOFileSystem shared] normalizePath:campo.text];
+        BOOL esDir = NO;
+        if (![[IOFileSystem shared] fileExistsAtPath:limpio isDirectory:&esDir] || !esDir) {
+            [IODialog showAlertIn:debil title:@"Ruta no valida"
+                          message:@"Esa carpeta no existe o no es accesible."];
+            return;
+        }
+        debil.path = limpio;
+    }];
+    [dialogo presentIn:self];
 }
 
 - (void)presentarOrdenar:(id)origen {
     IOSettings *ajustes = [IOSettings shared];
-    UIAlertController *hoja = [UIAlertController
-        alertControllerWithTitle:@"Ordenar por"
-                         message:nil
-                  preferredStyle:UIAlertControllerStyleActionSheet];
+    NSMutableArray<IODialogAction *> *acciones = [NSMutableArray array];
+    __weak IOFilesViewController *debil = self;
 
     NSArray *opciones = @[ @[ @"Nombre", @(IOSortByName) ],
                            @[ @"Tipo", @(IOSortByKind) ],
@@ -634,130 +751,134 @@
     for (NSArray *opcion in opciones) {
         NSString *titulo = opcion[0];
         IOSortKey clave = (IOSortKey)[opcion[1] integerValue];
-        NSString *prefijo = (ajustes.sortKey == clave) ? @"\u2713 " : @"";
-        [hoja addAction:[UIAlertAction
-            actionWithTitle:[prefijo stringByAppendingString:titulo]
-                      style:UIAlertActionStyleDefault
-                    handler:^(UIAlertAction *a) {
-            ajustes.sortKey = clave;
-            [self reloadContents];
-        }]];
+        BOOL activo = (ajustes.sortKey == clave);
+        [acciones addObject:[IODialogAction actionWithTitle:
+            [NSString stringWithFormat:@"%@%@", activo ? @"\u2713 " : @"", titulo]
+            style:(activo ? IODialogActionStyleSelected : IODialogActionStyleDefault)
+            handler:^{
+                ajustes.sortKey = clave;
+                [debil reloadContents];
+            }]];
     }
 
-    NSString *sentido = ajustes.sortAscending ? @"Descendente" : @"Ascendente";
-    [hoja addAction:[UIAlertAction actionWithTitle:sentido style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
+    NSString *sentido = ajustes.sortAscending ? @"Orden descendente"
+                                              : @"Orden ascendente";
+    [acciones addObject:[IODialogAction actionWithTitle:sentido
+        style:IODialogActionStyleDefault handler:^{
             ajustes.sortAscending = !ajustes.sortAscending;
-            [self reloadContents];
+            [debil reloadContents];
         }]];
 
     NSString *carpetas = ajustes.foldersFirst ? @"Archivos antes que carpetas"
                                               : @"Carpetas antes que archivos";
-    [hoja addAction:[UIAlertAction actionWithTitle:carpetas style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
+    [acciones addObject:[IODialogAction actionWithTitle:carpetas
+        style:IODialogActionStyleDefault handler:^{
             ajustes.foldersFirst = !ajustes.foldersFirst;
-            [self reloadContents];
+            [debil reloadContents];
         }]];
 
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
-
-    [self presentarHoja:hoja desdeOrigen:origen];
-}
-
-- (void)presentarHoja:(UIAlertController *)hoja desdeOrigen:(id)origen {
-    UIPopoverPresentationController *popover = hoja.popoverPresentationController;
-    if (popover) {
-        if ([origen isKindOfClass:[UIView class]]) {
-            popover.sourceView = origen;
-            popover.sourceRect = ((UIView *)origen).bounds;
-        } else if ([origen isKindOfClass:[UIBarButtonItem class]]) {
-            popover.barButtonItem = origen;
-        } else {
-            popover.sourceView = self.view;
-            popover.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds),
-                                            CGRectGetMidY(self.view.bounds), 1, 1);
-        }
-    }
-    [self presentViewController:hoja animated:YES completion:nil];
+    [IODialog showSheetIn:self title:@"Ordenar por" actions:acciones];
 }
 
 #pragma mark - Acciones sobre un elemento
 
 - (void)presentarAccionesParaItem:(IOFileItem *)item desdeIndice:(NSIndexPath *)indice {
-    UIAlertController *hoja = [UIAlertController
-        alertControllerWithTitle:item.name
-                         message:[item kindDescription]
-                  preferredStyle:UIAlertControllerStyleActionSheet];
+    NSMutableArray<IODialogAction *> *acciones = [NSMutableArray array];
+    __weak IOFilesViewController *debil = self;
 
     BOOL previsualizable = (!item.isDirectory &&
         ([IOHelpers isImageFile:item.path] || [IOHelpers isVideoFile:item.path] ||
          [IOHelpers isAudioFile:item.path] || [IOHelpers isTextFile:item.path] ||
          [IOHelpers isPlistFile:item.path]));
 
-    if (previsualizable) {
-        [hoja addAction:[UIAlertAction actionWithTitle:@"Abrir" style:UIAlertActionStyleDefault
-            handler:^(UIAlertAction *a) { [self abrirItem:item]; }]];
-    }
-    if (item.isDirectory) {
-        [hoja addAction:[UIAlertAction actionWithTitle:@"Abrir" style:UIAlertActionStyleDefault
-            handler:^(UIAlertAction *a) { [self abrirItem:item]; }]];
+    if (previsualizable || item.isDirectory) {
+        [acciones addObject:[IODialogAction actionWithTitle:@"Abrir"
+            style:IODialogActionStyleDefault handler:^{ [debil abrirItem:item]; }]];
     }
 
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Copiar" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
+    if ([[item.path pathExtension].lowercaseString isEqualToString:@"ipa"]) {
+        [acciones addObject:[IODialogAction actionWithTitle:@"Instalar este IPA"
+            style:IODialogActionStyleDefault handler:^{ [debil instalarIPAEnRuta:item.path]; }]];
+    }
+
+    if (item.isDirectory) {
+        [acciones addObject:[IODialogAction actionWithTitle:@"Analizar esta carpeta"
+            style:IODialogActionStyleDefault handler:^{
+                [debil.navigationController pushViewController:
+                    [[IOAnalyzerViewController alloc] initWithPath:item.path] animated:YES];
+            }]];
+    }
+
+    [acciones addObject:[IODialogAction actionWithTitle:@"Copiar"
+        style:IODialogActionStyleDefault handler:^{
             [[IOClipboard shared] setPaths:@[ item.path ] cut:NO];
-            [self actualizarBarra];
+            [debil actualizarBarra];
         }]];
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Cortar" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
+    [acciones addObject:[IODialogAction actionWithTitle:@"Cortar"
+        style:IODialogActionStyleDefault handler:^{
             [[IOClipboard shared] setPaths:@[ item.path ] cut:YES];
-            [self actualizarBarra];
+            [debil actualizarBarra];
         }]];
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Renombrar" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) { [self preguntarRenombrar:item]; }]];
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Duplicar" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) { [self duplicarItem:item]; }]];
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Comprimir (ZIP)" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) { [self comprimirRutas:@[ item.path ]]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Renombrar"
+        style:IODialogActionStyleDefault handler:^{ [debil preguntarRenombrar:item]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Duplicar"
+        style:IODialogActionStyleDefault handler:^{ [debil duplicarItem:item]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Comprimir (ZIP)"
+        style:IODialogActionStyleDefault handler:^{ [debil comprimirRutas:@[ item.path ]]; }]];
 
     if ([IOHelpers isArchiveFile:item.path]) {
-        [hoja addAction:[UIAlertAction actionWithTitle:@"Extraer aqui" style:UIAlertActionStyleDefault
-            handler:^(UIAlertAction *a) { [self extraerArchivo:item.path enCarpetaNueva:NO]; }]];
-        [hoja addAction:[UIAlertAction actionWithTitle:@"Extraer en carpeta nueva"
-            style:UIAlertActionStyleDefault
-            handler:^(UIAlertAction *a) { [self extraerArchivo:item.path enCarpetaNueva:YES]; }]];
-        [hoja addAction:[UIAlertAction actionWithTitle:@"Ver contenido" style:UIAlertActionStyleDefault
-            handler:^(UIAlertAction *a) { [self verContenidoDeArchivo:item]; }]];
+        [acciones addObject:[IODialogAction actionWithTitle:@"Extraer aqui"
+            style:IODialogActionStyleDefault handler:^{
+                [debil extraerArchivo:item.path enCarpetaNueva:NO];
+            }]];
+        [acciones addObject:[IODialogAction actionWithTitle:@"Extraer en carpeta nueva"
+            style:IODialogActionStyleDefault handler:^{
+                [debil extraerArchivo:item.path enCarpetaNueva:YES];
+            }]];
+        [acciones addObject:[IODialogAction actionWithTitle:@"Ver contenido"
+            style:IODialogActionStyleDefault handler:^{
+                [debil verContenidoDeArchivo:item];
+            }]];
     }
 
-    NSString *compartir = @"Compartir / Abrir con";
-    [hoja addAction:[UIAlertAction actionWithTitle:compartir style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) { [self compartirItem:item desdeIndice:indice]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Compartir / Abrir con..."
+        style:IODialogActionStyleDefault handler:^{
+            [debil compartirItem:item desdeIndice:indice];
+        }]];
 
     NSString *fav = [[IOStore shared] isFavorite:item.path]
         ? @"Quitar de favoritos" : @"Anadir a favoritos";
-    [hoja addAction:[UIAlertAction actionWithTitle:fav style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
+    [acciones addObject:[IODialogAction actionWithTitle:fav
+        style:IODialogActionStyleDefault handler:^{
             [[IOStore shared] toggleFavorite:item.path];
             [[NSNotificationCenter defaultCenter]
                 postNotificationName:@"IOSidebarNeedsReload" object:nil];
         }]];
 
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Propiedades" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
+    [acciones addObject:[IODialogAction actionWithTitle:@"Propiedades"
+        style:IODialogActionStyleDefault handler:^{
             IOPropertiesViewController *vc =
                 [[IOPropertiesViewController alloc] initWithPath:item.path];
-            [self.navigationController pushViewController:vc animated:YES];
+            [debil.navigationController pushViewController:vc animated:YES];
         }]];
 
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Borrar" style:UIAlertActionStyleDestructive
-        handler:^(UIAlertAction *a) { [self confirmarBorradoDeItems:@[ item ]]; }]];
+    if ([IOSettings shared].trashEnabled) {
+        [acciones addObject:[IODialogAction actionWithTitle:@"Mover a la papelera"
+            style:IODialogActionStyleDestructive handler:^{
+                [debil confirmarBorradoDeItems:@[ item ]];
+            }]];
+        [acciones addObject:[IODialogAction actionWithTitle:@"Borrar definitivamente"
+            style:IODialogActionStyleDestructive handler:^{
+                [debil confirmarBorradoPermanenteDeItems:@[ item ]];
+            }]];
+    } else {
+        [acciones addObject:[IODialogAction actionWithTitle:@"Borrar"
+            style:IODialogActionStyleDestructive handler:^{
+                [debil confirmarBorradoPermanenteDeItems:@[ item ]];
+            }]];
+    }
 
-    [hoja addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
-
-    [self presentarHoja:hoja desdeOrigen:(indice ? [self.tabla cellForRowAtIndexPath:indice] : nil)];
+    [IODialog showSheetIn:self title:item.name actions:acciones];
 }
 
 #pragma mark - Operaciones: crear
@@ -776,21 +897,14 @@
 
 - (void)preguntarNombre:(NSString *)titulo valor:(NSString *)valor
                  accion:(void (^)(NSString *nombre))accion {
-    UIAlertController *alerta = [UIAlertController
-        alertControllerWithTitle:titulo message:nil
-                  preferredStyle:UIAlertControllerStyleAlert];
-    [alerta addTextFieldWithConfigurationHandler:^(UITextField *campo) {
-        campo.text = valor;
-        campo.clearButtonMode = UITextFieldViewModeWhileEditing;
+    IODialog *dialogo = [IODialog alertWithTitle:titulo message:nil];
+    UITextField *campo = [dialogo addTextFieldWithPlaceholder:nil text:valor];
+    [dialogo addAction:@"Cancelar" style:IODialogActionStyleCancel handler:nil];
+    [dialogo addAction:@"Crear" style:IODialogActionStyleDefault handler:^{
+        NSString *texto = campo.text;
+        if (texto.length) { accion(texto); }
     }];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Crear" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
-            NSString *texto = alerta.textFields.firstObject.text;
-            if (texto.length) { accion(texto); }
-        }]];
-    [self presentViewController:alerta animated:YES completion:nil];
+    [dialogo presentIn:self];
 }
 
 - (void)crearCarpeta:(NSString *)nombre {
@@ -816,26 +930,20 @@
 #pragma mark - Operaciones: renombrar, duplicar, borrar
 
 - (void)preguntarRenombrar:(IOFileItem *)item {
-    UIAlertController *alerta = [UIAlertController
-        alertControllerWithTitle:@"Renombrar" message:nil
-                  preferredStyle:UIAlertControllerStyleAlert];
-    [alerta addTextFieldWithConfigurationHandler:^(UITextField *campo) {
-        campo.text = item.name;
-        campo.clearButtonMode = UITextFieldViewModeWhileEditing;
+    IODialog *dialogo = [IODialog alertWithTitle:@"Renombrar" message:nil];
+    UITextField *campo = [dialogo addTextFieldWithPlaceholder:nil text:item.name];
+    __weak IOFilesViewController *debil = self;
+    [dialogo addAction:@"Cancelar" style:IODialogActionStyleCancel handler:nil];
+    [dialogo addAction:@"Guardar" style:IODialogActionStyleDefault handler:^{
+        NSString *nombre = campo.text;
+        NSError *error = nil;
+        if ([[IOFileSystem shared] renameItemAtPath:item.path toName:nombre error:&error]) {
+            [debil reloadContents];
+        } else {
+            [debil mostrarError:error];
+        }
     }];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Guardar" style:UIAlertActionStyleDefault
-        handler:^(UIAlertAction *a) {
-            NSString *nombre = alerta.textFields.firstObject.text;
-            NSError *error = nil;
-            if ([[IOFileSystem shared] renameItemAtPath:item.path toName:nombre error:&error]) {
-                [self reloadContents];
-            } else {
-                [self mostrarError:error];
-            }
-        }]];
-    [self presentViewController:alerta animated:YES completion:nil];
+    [dialogo presentIn:self];
 }
 
 - (void)duplicarItem:(IOFileItem *)item {
@@ -855,27 +963,85 @@
 
 - (void)confirmarBorradoDeItems:(NSArray<IOFileItem *> *)items {
     if (items.count == 0) { return; }
-    NSString *mensaje = (items.count == 1)
-        ? [NSString stringWithFormat:@"Se borrara \"%@\".", items.firstObject.name]
-        : [NSString stringWithFormat:@"Se borraran %lu elementos.",
-           (unsigned long)items.count];
+    BOOL papelera = [IOSettings shared].trashEnabled;
+    NSString *mensaje;
+    if (items.count == 1) {
+        mensaje = papelera
+            ? [NSString stringWithFormat:@"\"%@\" se movera a la papelera. Podras restaurarlo despues.", items.firstObject.name]
+            : [NSString stringWithFormat:@"\"%@\" se borrara para siempre.", items.firstObject.name];
+    } else {
+        mensaje = papelera
+            ? [NSString stringWithFormat:@"%lu elementos se moveran a la papelera. Podras restaurarlos despues.", (unsigned long)items.count]
+            : [NSString stringWithFormat:@"%lu elementos se borraran para siempre.", (unsigned long)items.count];
+    }
 
     if (![IOSettings shared].confirmDelete) {
-        [self borrarItems:items];
+        if (papelera) { [self moverAPapeleraItems:items]; }
+        else { [self borrarItemsDefinitivamente:items]; }
         return;
     }
-    UIAlertController *alerta = [UIAlertController
-        alertControllerWithTitle:[items.firstObject isDirectory] ? @"Borrar carpeta" : @"Borrar"
-                         message:mensaje
-                  preferredStyle:UIAlertControllerStyleAlert];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel
-        handler:nil]];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Borrar" style:UIAlertActionStyleDestructive
-        handler:^(UIAlertAction *a) { [self borrarItems:items]; }]];
-    [self presentViewController:alerta animated:YES completion:nil];
+
+    __weak IOFilesViewController *debil = self;
+    [IODialog showConfirmIn:self
+                      title:(papelera ? @"Mover a la papelera" : @"Borrar")
+                    message:mensaje
+                destructive:!papelera
+               confirmTitle:(papelera ? @"Mover" : @"Borrar")
+                    handler:^{
+        if (papelera) { [debil moverAPapeleraItems:items]; }
+        else { [debil borrarItemsDefinitivamente:items]; }
+    }];
 }
 
-- (void)borrarItems:(NSArray<IOFileItem *> *)items {
+- (void)confirmarBorradoPermanenteDeItems:(NSArray<IOFileItem *> *)items {
+    if (items.count == 0) { return; }
+    NSString *mensaje = (items.count == 1)
+        ? [NSString stringWithFormat:@"\"%@\" se borrara para siempre. Esta accion no se puede deshacer.", items.firstObject.name]
+        : [NSString stringWithFormat:@"%lu elementos se borraran para siempre. Esta accion no se puede deshacer.", (unsigned long)items.count];
+    __weak IOFilesViewController *debil = self;
+    [IODialog showConfirmIn:self
+                      title:@"Borrar definitivamente"
+                    message:mensaje
+                destructive:YES
+               confirmTitle:@"Borrar"
+                    handler:^{ [debil borrarItemsDefinitivamente:items]; }];
+}
+
+- (void)moverAPapeleraItems:(NSArray<IOFileItem *> *)items {
+    if (items.count == 0) { return; }
+    IOProgressHUD *hud = [IOProgressHUD shared];
+    [hud showInView:self.view message:@"Moviendo a la papelera"];
+    [hud updateProgress:-1.0];
+    __weak IOFilesViewController *debil = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *ultimoError = nil;
+        NSUInteger movidos = 0;
+        for (IOFileItem *item in items) {
+            NSError *error = nil;
+            if ([[IOTrash shared] moveItemAtPath:item.path error:&error]) {
+                movidos++;
+            } else {
+                ultimoError = error;
+            }
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[IOProgressHUD shared] hide];
+            IOFilesViewController *fuerte = debil;
+            if (!fuerte) { return; }
+            if (fuerte.modoSeleccion) { [fuerte desactivarSeleccion]; }
+            [fuerte reloadContents];
+            if (movidos < items.count) {
+                [IODialog showErrorIn:fuerte error:ultimoError ?: [NSError
+                    errorWithDomain:IOFileSystemErrorDomain
+                               code:IOFileSystemErrorUnknown
+                           userInfo:@{ NSLocalizedDescriptionKey:
+                                       @"No se pudieron mover todos los elementos." }]];
+            }
+        });
+    });
+}
+
+- (void)borrarItemsDefinitivamente:(NSArray<IOFileItem *> *)items {
     NSArray *rutas = [items valueForKey:@"path"];
     __weak IOFilesViewController *debil = self;
     [self ejecutarOperacion:@"Borrando" tarea:^BOOL(IOProgressBlock progreso,
@@ -892,6 +1058,42 @@
         if (debil.modoSeleccion) { [debil desactivarSeleccion]; }
         [debil terminarOperacion:exito error:error];
     }];
+}
+
+- (void)instalarIPAEnRuta:(NSString *)ruta {
+    IOProgressHUD *hud = [IOProgressHUD shared];
+    [hud showInView:self.view message:@"Preparando paquete..."];
+    [hud updateProgress:-1.0];
+    [hud setCancelHandler:nil];
+    __weak IOFilesViewController *debil = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSError *error = nil;
+        BOOL exito = [[IOIPAInstaller shared] installIPAAtPath:ruta
+            message:^(NSString *mensaje) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [[IOProgressHUD shared] updateMessage:mensaje];
+                });
+            } error:&error];
+        NSString *bundleID = [IOIPAInstaller shared].lastBundleIdentifier;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[IOProgressHUD shared] hide];
+            IOFilesViewController *fuerte = debil;
+            if (!fuerte) { return; }
+            if (!exito) {
+                [IODialog showErrorIn:fuerte error:error];
+                return;
+            }
+            IODialog *dialogo = [IODialog alertWithTitle:@"Instalado"
+                message:@"La aplicacion se instalo correctamente."];
+            if (bundleID.length) {
+                [dialogo addAction:@"Abrir" style:IODialogActionStyleDefault handler:^{
+                    [[IOIPAInstaller shared] launchBundleIdentifier:bundleID];
+                }];
+            }
+            [dialogo addAction:@"Vale" style:IODialogActionStyleCancel handler:nil];
+            [dialogo presentIn:fuerte];
+        });
+    });
 }
 
 #pragma mark - Operaciones: portapapeles
@@ -925,6 +1127,126 @@
     [self confirmarBorradoDeItems:[self.seleccionados copy]];
 }
 
+- (void)accionSeleccionarTodo {
+    [self.seleccionados removeAllObjects];
+    for (NSUInteger i = 0; i < self.items.count; i++) {
+        NSIndexPath *indice = [NSIndexPath indexPathForRow:(NSInteger)i inSection:0];
+        [self.tabla selectRowAtIndexPath:indice animated:NO
+                          scrollPosition:UITableViewScrollPositionNone];
+        [self.seleccionados addObject:self.items[i]];
+    }
+    [self actualizarBarra];
+}
+
+- (void)accionDeseleccionarTodo {
+    for (NSUInteger i = 0; i < self.items.count; i++) {
+        NSIndexPath *indice = [NSIndexPath indexPathForRow:(NSInteger)i inSection:0];
+        [self.tabla deselectRowAtIndexPath:indice animated:NO];
+    }
+    [self.seleccionados removeAllObjects];
+    [self actualizarBarra];
+}
+
+- (void)accionInvertirSeleccion {
+    NSArray *anteriores = [self.seleccionados copy];
+    [self.seleccionados removeAllObjects];
+    for (NSUInteger i = 0; i < self.items.count; i++) {
+        IOFileItem *item = self.items[i];
+        NSIndexPath *indice = [NSIndexPath indexPathForRow:(NSInteger)i inSection:0];
+        if ([anteriores containsObject:item]) {
+            [self.tabla deselectRowAtIndexPath:indice animated:NO];
+        } else {
+            [self.tabla selectRowAtIndexPath:indice animated:NO
+                              scrollPosition:UITableViewScrollPositionNone];
+            [self.seleccionados addObject:item];
+        }
+    }
+    [self actualizarBarra];
+}
+
+- (void)accionSeleccionPorTipo {
+    NSArray *tipos = @[ @"Imagenes", @"Videos", @"Audio", @"Documentos", @"Carpetas" ];
+    NSMutableArray<IODialogAction *> *acciones = [NSMutableArray array];
+    __weak IOFilesViewController *debil = self;
+    for (NSString *tipo in tipos) {
+        [acciones addObject:[IODialogAction actionWithTitle:tipo
+            style:IODialogActionStyleDefault handler:^{
+                [debil seleccionarSoloTipo:tipo];
+            }]];
+    }
+    [IODialog showSheetIn:self title:@"Seleccionar por tipo" actions:acciones];
+}
+
+- (void)seleccionarSoloTipo:(NSString *)tipo {
+    [self accionDeseleccionarTodo];
+    [self seleccionarConPredicado:^BOOL(IOFileItem *item) {
+        if ([tipo isEqualToString:@"Imagenes"]) {
+            return (!item.isDirectory && [IOHelpers isImageFile:item.path]);
+        }
+        if ([tipo isEqualToString:@"Videos"]) {
+            return (!item.isDirectory && [IOHelpers isVideoFile:item.path]);
+        }
+        if ([tipo isEqualToString:@"Audio"]) {
+            return (!item.isDirectory && [IOHelpers isAudioFile:item.path]);
+        }
+        if ([tipo isEqualToString:@"Documentos"]) {
+            return (!item.isDirectory && ([IOHelpers isTextFile:item.path] ||
+                                          [IOHelpers isPlistFile:item.path] ||
+                                          [IOHelpers isArchiveFile:item.path]));
+        }
+        if ([tipo isEqualToString:@"Carpetas"]) {
+            return item.isDirectory;
+        }
+        return NO;
+    }];
+}
+
+- (void)seleccionarConPredicado:(BOOL (^)(IOFileItem *item))predicado {
+    for (NSUInteger i = 0; i < self.items.count; i++) {
+        IOFileItem *item = self.items[i];
+        if (!predicado(item)) { continue; }
+        NSIndexPath *indice = [NSIndexPath indexPathForRow:(NSInteger)i inSection:0];
+        [self.tabla selectRowAtIndexPath:indice animated:NO
+                          scrollPosition:UITableViewScrollPositionNone];
+        if (![self.seleccionados containsObject:item]) {
+            [self.seleccionados addObject:item];
+        }
+    }
+    [self actualizarBarra];
+}
+
+- (void)accionMenuSeleccion {
+    BOOL papelera = [IOSettings shared].trashEnabled;
+    NSMutableArray<IODialogAction *> *acciones = [NSMutableArray array];
+    __weak IOFilesViewController *debil = self;
+
+    [acciones addObject:[IODialogAction actionWithTitle:@"Seleccionar todo"
+        style:IODialogActionStyleDefault handler:^{ [debil accionSeleccionarTodo]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Invertir seleccion"
+        style:IODialogActionStyleDefault handler:^{ [debil accionInvertirSeleccion]; }]];
+    [acciones addObject:[IODialogAction actionWithTitle:@"Seleccionar por tipo..."
+        style:IODialogActionStyleDefault handler:^{ [debil accionSeleccionPorTipo]; }]];
+
+    IODialogAction *comprimir = [IODialogAction actionWithTitle:@"Comprimir seleccion"
+        style:IODialogActionStyleDefault handler:^{ [debil accionComprimirSeleccion]; }];
+    comprimir.enabled = (self.seleccionados.count > 0);
+    [acciones addObject:comprimir];
+
+    if (papelera) {
+        IODialogAction *borrar = [IODialogAction actionWithTitle:@"Borrar definitivamente"
+            style:IODialogActionStyleDestructive handler:^{
+                [debil confirmarBorradoPermanenteDeItems:[debil.seleccionados copy]];
+            }];
+        borrar.enabled = (self.seleccionados.count > 0);
+        [acciones addObject:borrar];
+    }
+
+    [acciones addObject:[IODialogAction actionWithTitle:@"Deseleccionar todo"
+        style:IODialogActionStyleDefault handler:^{ [debil accionDeseleccionarTodo]; }]];
+
+    [IODialog showSheetIn:self title:@"Seleccion" actions:acciones];
+}
+
 - (void)accionPegar {
     IOClipboard *porta = [IOClipboard shared];
     if (!porta.hasItems) { return; }
@@ -942,19 +1264,16 @@
     }
 
     if (hayColision && [IOSettings shared].askBeforeOverwrite) {
-        UIAlertController *alerta = [UIAlertController
-            alertControllerWithTitle:@"Ya existe un elemento con ese nombre"
-                             message:@"¿Que quieres hacer?"
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [alerta addAction:[UIAlertAction actionWithTitle:@"Reemplazar"
-            style:UIAlertActionStyleDestructive
-            handler:^(UIAlertAction *a) { [debil ejecutarPegado:rutas cortar:cortar reemplazar:YES]; }]];
-        [alerta addAction:[UIAlertAction actionWithTitle:@"Conservar ambos"
-            style:UIAlertActionStyleDefault
-            handler:^(UIAlertAction *a) { [debil ejecutarPegado:rutas cortar:cortar reemplazar:NO]; }]];
-        [alerta addAction:[UIAlertAction actionWithTitle:@"Cancelar"
-            style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alerta animated:YES completion:nil];
+        IODialog *dialogo = [IODialog alertWithTitle:@"Ya existe un elemento con ese nombre"
+                                             message:@"¿Que quieres hacer?"];
+        [dialogo addAction:@"Cancelar" style:IODialogActionStyleCancel handler:nil];
+        [dialogo addAction:@"Conservar ambos" style:IODialogActionStyleDefault handler:^{
+            [debil ejecutarPegado:rutas cortar:cortar reemplazar:NO];
+        }];
+        [dialogo addAction:@"Reemplazar" style:IODialogActionStyleDestructive handler:^{
+            [debil ejecutarPegado:rutas cortar:cortar reemplazar:YES];
+        }];
+        [dialogo presentIn:self];
         return;
     }
     [self ejecutarPegado:rutas cortar:cortar reemplazar:NO];
@@ -1069,14 +1388,10 @@
         mensaje = [mensaje stringByAppendingFormat:@"\n... y %lu mas",
                    (unsigned long)(entradas.count - limite)];
     }
-    UIAlertController *alerta = [UIAlertController
-        alertControllerWithTitle:[NSString stringWithFormat:@"%lu entradas",
-                                  (unsigned long)entradas.count]
-                         message:mensaje
-                  preferredStyle:UIAlertControllerStyleAlert];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Cerrar" style:UIAlertActionStyleCancel
-        handler:nil]];
-    [self presentViewController:alerta animated:YES completion:nil];
+    [IODialog showAlertIn:self
+                    title:[NSString stringWithFormat:@"%lu entradas",
+                           (unsigned long)entradas.count]
+                  message:mensaje];
 }
 
 #pragma mark - Compartir
@@ -1176,14 +1491,7 @@
 }
 
 - (void)mostrarError:(NSError *)error {
-    NSString *mensaje = error.localizedDescription ?: @"Operacion no completada";
-    UIAlertController *alerta = [UIAlertController
-        alertControllerWithTitle:@"No se pudo completar"
-                         message:mensaje
-                  preferredStyle:UIAlertControllerStyleAlert];
-    [alerta addAction:[UIAlertAction actionWithTitle:@"Vale" style:UIAlertActionStyleDefault
-        handler:nil]];
-    [self presentViewController:alerta animated:YES completion:nil];
+    [IODialog showErrorIn:self error:error];
 }
 
 #pragma mark - Lateral

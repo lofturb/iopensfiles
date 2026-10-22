@@ -4,6 +4,7 @@
 #import "IOHelpers.h"
 #import "IOFileSystem.h"
 #import "IOFileIcons.h"
+#import "IODialog.h"
 
 @interface IOTextEditorViewController () <UITextViewDelegate, UISearchBarDelegate>
 
@@ -80,6 +81,7 @@
 - (void)construirBarra {
     self.barra = [[UIToolbar alloc] init];
     self.barra.translatesAutoresizingMaskIntoConstraints = NO;
+    self.barra.translucent = NO;
     [self.view addSubview:self.barra];
     [self.view addConstraints:@[
         [NSLayoutConstraint constraintWithItem:self.barra attribute:NSLayoutAttributeLeading
@@ -122,9 +124,17 @@
     self.texto.backgroundColor = tema.cardBackground;
     self.texto.textColor = tema.textPrimary;
     self.texto.font = [tema fontMono:self.tamanoFuente];
+    self.texto.keyboardAppearance = tema.dark ? UIKeyboardAppearanceDark
+                                              : UIKeyboardAppearanceDefault;
+    self.texto.indicatorStyle = tema.dark ? UIScrollViewIndicatorStyleWhite
+                                          : UIScrollViewIndicatorStyleDefault;
     self.barra.barTintColor = tema.cardBackground;
     self.barra.tintColor = tema.accent;
     self.barra.barStyle = tema.dark ? UIBarStyleBlack : UIBarStyleDefault;
+    if (self.buscador) {
+        self.buscador.barStyle = tema.dark ? UIBarStyleBlack : UIBarStyleDefault;
+        self.buscador.tintColor = tema.accent;
+    }
 }
 
 - (void)actualizarTitulo {
@@ -194,13 +204,8 @@
         self.sucio = NO;
         self.navigationItem.rightBarButtonItem.enabled = NO;
     } else {
-        UIAlertController *alerta = [UIAlertController
-            alertControllerWithTitle:@"No se pudo guardar"
-                             message:error.localizedDescription
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [alerta addAction:[UIAlertAction actionWithTitle:@"Vale"
-            style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alerta animated:YES completion:nil];
+        [IODialog showAlertIn:self title:@"No se pudo guardar"
+                      message:error.localizedDescription ?: @"Error desconocido."];
     }
 }
 

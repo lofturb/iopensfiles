@@ -549,4 +549,129 @@ static NSError *IOErrorFromErrno(NSString *contexto) {
     }
 }
 
+#pragma mark - Volumenes y zonas sensibles
+
+- (NSArray<NSDictionary *> *)mountedVolumes {
+    struct statfs *montajes = NULL;
+    int cantidad = getmntinfo(&montajes, MNT_NOWAIT);
+    if (cantidad <= 0 || !montajes) { return @[]; }
+
+    NSMutableArray *resultado = [NSMutableArray array];
+    NSMutableSet *dispositivos = [NSMutableSet set];
+    NSMutableSet *puntos = [NSMutableSet set];
+
+    for (int i = 0; i < cantidad; i++) {
+        struct statfs *m = &montajes[i];
+        NSString *tipo = m->f_fstypename[0]
+            ? [NSString stringWithUTF8String:m->f_fstypename] : @"";
+        if ([tipo isEqualToString:@"devfs"] || [tipo isEqualToString:@"autofs"] ||
+            [tipo isEqualToString:@"map"]) {
+            continue;
+        }
+        unsigned long long total = (unsigned long long)m->f_blocks *
+                                   (unsigned long long)m->f_bsize;
+        if (total == 0) { continue; }
+
+        NSString *punto = m->f_mntonname[0]
+            ? [NSString stringWithUTF8String:m->f_mntonname] : @"";
+        NSString *dispositivo = m->f_mntfromname[0]
+            ? [NSString stringWithUTF8String:m->f_mntfromname] : @"";
+        if (punto.length == 0) { continue; }
+        if ([puntos containsObject:punto]) { continue; }
+        if (dispositivo.length && [dispositivos containsObject:dispositivo]) { continue; }
+        [puntos addObject:punto];
+        if (dispositivo.length) { [dispositivos addObject:dispositivo]; }
+
+        unsigned long long libre = (unsigned long long)m->f_bavail *
+                                   (unsigned long long)m->f_bsize;
+        NSString *nombre = nil;
+        if ([punto isEqualToString:@"/"]) {
+            nombre = @"Sistema";
+        } else if ([punto isEqualToString:@"/private/var"] ||
+                   [punto isEqualToString:@"/var"]) {
+            nombre = @"Datos";
+        } else if ([punto isEqualToString:@"/private/var/mobile/Media"]) {
+            nombre = @"Medios";
+        } else {
+            nombre = [punto lastPathComponent];
+            if (nombre.length == 0) { nombre = @"Almacenamiento"; }
+        }
+
+        [resultado addObject:@{
+            @"name": nombre,
+            @"path": punto,
+            @"device": dispositivo,
+            @"fsType": tipo,
+            @"total": @(total),
+            @"free": @(libre)
+        }];
+    }
+
+    [resultado sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        NSString *pa = a[@"path"];
+        NSString *pb = b[@"path"];
+        if ([pa isEqualToString:@"/"]) { return NSOrderedAscending; }
+        if ([pb isEqualToString:@"/"]) { return NSOrderedDescending; }
+        unsigned long long ta = [a[@"total"] unsignedLongLongValue];
+        unsigned long long tb = [b[@"total"] unsignedLongLongValue];
+        if (ta < tb) { return NSOrderedDescending; }
+        if (ta > tb) { return NSOrderedAscending; }
+        return [pa compare:pb];
+    }];
+
+    return resultado;
+}
+
+- (BOOL)isProtectedPath:(NSString *)path {
+    NSString *limpio = [self normalizePath:path];
+    if (limpio.length == 0) { return YES; }
+
+    static NSArray<NSString *> *prefijos = nil;
+    static dispatch_once_t unaVez;
+    dispatch_once(&unaVez, ^{
+        prefijos = @[
+            @"/System", @"/usr", @"/bin", @"/sbin", @"/dev", @"/etc",
+            @"/private/etc", @"/private/preboot", @"/private/var/db",
+            @"/private/var/lib", @"/private/var/stash", @"/private/var/Keychains",
+            @"/private/var/root", @"/private/var/preferences", @"/Library",
+            @"/Applications", @"/cores",
+            @"/private/var/mobile/Containers/Bundle",
+            @"/private/var/mobile/Containers/Data",
+            @"/private/var/mobile/Containers/Shared/AppGroup",
+            @"/var/mobile/Containers/Bundle",
+            @"/var/mobile/Containers/Data",
+            @"/var/mobile/Containers/Shared/AppGroup",
+            @"/private/var/mobile/Media/PhotoData",
+            @"/var/mobile/Media/PhotoData"
+        ];
+    });
+
+    for (NSString *prefijo in prefijos) {
+        if ([limpio isEqualToString:prefijo]) { return YES; }
+        if ([limpio hasPrefix:[prefijo stringByAppendingString:@"/"]]) { return YES; }
+    }
+
+    // La biblioteca del usuario se protege salvo caches y registros, que son
+    // justo lo que interesa limpiar.
+    NSArray *bibliotecas = @[ @"/private/var/mobile/Library",
+                              @"/var/mobile/Library" ];
+    for (NSString *biblioteca in bibliotecas) {
+        if ([limpio isEqualToString:biblioteca]) { return YES; }
+        if ([limpio hasPrefix:[biblioteca stringByAppendingString:@"/"]]) {
+            NSString *caches = [biblioteca stringByAppendingString:@"/Caches"];
+            NSString *logs = [biblioteca stringByAppendingString:@"/Logs"];
+            if ([limpio isEqualToString:caches] ||
+                [limpio hasPrefix:[caches stringByAppendingString:@"/"]]) {
+                return NO;
+            }
+            if ([limpio isEqualToString:logs] ||
+                [limpio hasPrefix:[logs stringByAppendingString:@"/"]]) {
+                return NO;
+            }
+            return YES;
+        }
+    }
+    return NO;
+}
+
 @end

@@ -31,6 +31,9 @@ extern NSString * const IOThemeDidChangeNotification;
 @property (nonatomic, readonly) UIColor *warning;
 @property (nonatomic, readonly) UIColor *controlFill;
 @property (nonatomic, readonly) UIColor *selectionFill;
+@property (nonatomic, readonly) UIColor *fieldBackground;
+@property (nonatomic, readonly) UIColor *overlay;
+@property (nonatomic, readonly) UIColor *separatorStrong;
 
 // --- Medidas ---
 @property (nonatomic, readonly) CGFloat cornerRadius;

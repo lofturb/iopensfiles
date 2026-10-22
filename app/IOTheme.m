@@ -17,9 +17,13 @@ NSString * const IOThemeDidChangeNotification = @"IOThemeDidChangeNotification";
     [IOTheme shared].dark = dark;
     UIWindow *ventana = [[UIApplication sharedApplication] keyWindow];
     ventana.tintColor = [IOTheme shared].accent;
+    ventana.backgroundColor = [IOTheme shared].background;
     for (UIWindow *w in [[UIApplication sharedApplication] windows]) {
         w.tintColor = [IOTheme shared].accent;
+        w.backgroundColor = [IOTheme shared].background;
     }
+    [UIApplication sharedApplication].statusBarStyle = dark
+        ? UIStatusBarStyleLightContent : UIStatusBarStyleDefault;
     [[NSNotificationCenter defaultCenter]
         postNotificationName:IOThemeDidChangeNotification
                       object:nil];
@@ -106,6 +110,20 @@ NSString * const IOThemeDidChangeNotification = @"IOThemeDidChangeNotification";
 - (UIColor *)selectionFill {
     return self.dark ? [IOTheme colorWithHex:0x0A84FF alpha:0.28]
                      : [IOTheme colorWithHex:0x0A84FF alpha:0.14];
+}
+
+- (UIColor *)fieldBackground {
+    return self.dark ? [IOTheme colorWithHex:0x2C2C2E alpha:1.0]
+                     : [IOTheme colorWithHex:0xF2F2F7 alpha:1.0];
+}
+
+- (UIColor *)overlay {
+    return [UIColor colorWithWhite:0.0 alpha:(self.dark ? 0.66 : 0.42)];
+}
+
+- (UIColor *)separatorStrong {
+    return self.dark ? [IOTheme colorWithHex:0x545458 alpha:1.0]
+                     : [IOTheme colorWithHex:0xC7C7CC alpha:1.0];
 }
 
 #pragma mark - Medidas
