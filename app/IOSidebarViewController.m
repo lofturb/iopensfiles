@@ -296,7 +296,7 @@ typedef NS_ENUM(NSInteger, IOSidebarSection) {
         celda.glifo = (indexPath.section == IOSidebarSectionFavoritos)
             ? IOGlyphStar : IOGlyphClock;
         celda.esFavorito = (indexPath.section == IOSidebarSectionFavoritos);
-        celda.contador.text = indexPath.section == IOSidebarSectionRecentes ? @"" : @"";
+        celda.contador.text = @"";
         celda.selected = [self.selectedPath isEqualToString:ruta];
     }
 
