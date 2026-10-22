@@ -170,8 +170,8 @@
 }
 
 - (void)setCancelHandler:(void (^)(void))handler {
-    self.cancelHandler = handler;
-    self.botonCancelar.hidden = (handler == nil);
+    _cancelHandler = [handler copy];
+    self.botonCancelar.hidden = (_cancelHandler == nil);
 }
 
 - (void)pulsarCancelar {
