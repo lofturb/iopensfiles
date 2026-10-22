@@ -199,19 +199,21 @@
     self.barra.translucent = NO;
     [self.view addSubview:self.barra];
 
-    UIBarButtonItem *flexible = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
-                             target:nil action:nil];
+    UIBarButtonItem *(^flexible)(void) = ^UIBarButtonItem *(void) {
+        return [[UIBarButtonItem alloc]
+            initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
+                                 target:nil action:nil];
+    };
     self.barra.items = @[
-        flexible,
+        flexible(),
         [self itemGlifo:IOGlyphShare accion:@selector(accionCompartir)],
-        flexible,
+        flexible(),
         [self itemGlifo:IOGlyphDownload accion:@selector(accionGuardar)],
-        flexible,
+        flexible(),
         [self itemGlifo:IOGlyphImage accion:@selector(accionUsarComoFondo)],
-        flexible,
+        flexible(),
         [self itemGlifo:IOGlyphInfo accion:@selector(accionInformacion)],
-        flexible
+        flexible()
     ];
 
     [self.view addConstraints:@[

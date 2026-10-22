@@ -1007,6 +1007,8 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
 
     if (self.rutas.count == 0) {
         [self.reproductor pause];
+        [self quitarObservadoresDelItem];
+        [self.reproductor replaceCurrentItemWithPlayerItem:nil];
         self.indice = 0;
         self.esVideo = NO;
         self.titulo.text = @"Lista vacia";
