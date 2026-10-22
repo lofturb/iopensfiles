@@ -4,6 +4,10 @@
 
 @protocol IOSidebarDelegate <NSObject>
 - (void)sidebar:(IOSidebarViewController *)sidebar didSelectPath:(NSString *)path;
+
+@optional
+// Entrada "Inicio": vuelve a la pantalla principal de la app.
+- (void)sidebarDidSelectHome:(IOSidebarViewController *)sidebar;
 @end
 
 // Panel lateral: Lugares, Favoritos y Recientes.

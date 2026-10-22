@@ -42,12 +42,14 @@ IOpenFiles_FILES = \
 	IOTextEditorViewController.m \
 	IOImageViewController.m \
 	IOMediaPlayerViewController.m \
+	IOPlaylistViewController.m \
 	IOSettingsViewController.m \
 	IORootContainerViewController.m
 
 # Frameworks disponibles en iOS 9. ImageIO sirve para las miniaturas.
 IOpenFiles_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore \
-	AVFoundation CoreMedia CoreVideo ImageIO MobileCoreServices
+	AVFoundation CoreMedia CoreVideo ImageIO MobileCoreServices \
+	MediaPlayer
 
 # -Werror convierte cualquier aviso en error: silenciamos solo lo justo.
 IOpenFiles_CFLAGS = -fobjc-arc \

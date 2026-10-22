@@ -6,8 +6,10 @@
 #import "IOFileItem.h"
 #import "IOFileIcons.h"
 #import "IODialog.h"
+#import "IOPlaylistViewController.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <MediaPlayer/MediaPlayer.h>
 #import <QuartzCore/QuartzCore.h>
 #import <math.h>
 #import <stdlib.h>
@@ -140,9 +142,11 @@ static UIImage *IOPlayerImage(IOPlayerGlyph glifo, CGFloat lado, UIColor *color)
 
 static void *IOPlayerStatusContext = &IOPlayerStatusContext;
 
-@interface IOMediaPlayerViewController ()
-@property (nonatomic, strong) NSArray<NSString *> *rutas;
+@interface IOMediaPlayerViewController () <IOPlaylistDataSource>
+@property (nonatomic, strong) NSMutableArray<NSString *> *rutas;
 @property (nonatomic, assign) NSInteger indice;
+@property (nonatomic, assign) BOOL mandoConfigurado;
+@property (nonatomic, assign) NSTimeInterval ultimaActualizacionNowPlaying;
 
 @property (nonatomic, strong) AVPlayer *reproductor;
 @property (nonatomic, strong) AVPlayerItem *itemActual;
@@ -215,7 +219,7 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
 - (instancetype)initWithPaths:(NSArray<NSString *> *)paths startIndex:(NSInteger)index {
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
-        _rutas = paths.count ? [paths copy] : @[];
+        _rutas = paths.count ? [paths mutableCopy] : [NSMutableArray array];
         _indice = (index >= 0 && index < (NSInteger)_rutas.count) ? index : 0;
         _aleatorio = NO;
         _modoRepeticion = 0;
@@ -281,6 +285,7 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
         selector:@selector(aplicarTema)
             name:IOThemeDidChangeNotification object:nil];
 
+    [self configurarMandoRemoto];
     [self cargarIndice:self.indice reproducir:YES];
     [self actualizarBotonesDeEstado];
 }
@@ -288,6 +293,8 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self quitarObservadoresDelItem];
+    [self quitarMandoRemoto];
+    [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nil;
     if (self.observadorTiempo) {
         [self.reproductor removeTimeObserver:self.observadorTiempo];
         self.observadorTiempo = nil;
@@ -301,9 +308,17 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
     [self.navigationController setNavigationBarHidden:YES animated:YES];
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     [UIApplication sharedApplication].statusBarStyle = UIStatusBarStyleLightContent;
+
+    // Mantiene el audio activo con la pantalla bloqueada y en segundo plano.
+    AVAudioSession *sesion = [AVAudioSession sharedInstance];
+    [sesion setCategory:AVAudioSessionCategoryPlayback error:NULL];
+    [sesion setActive:YES error:NULL];
+
+    if (!self.mandoConfigurado) { [self configurarMandoRemoto]; }
     [self.reproductor play];
     if (self.velocidad != 1.0) { self.reproductor.rate = self.velocidad; }
     [self actualizarBotonPlay];
+    [self actualizarNowPlaying];
     [self reiniciarAutoOcultar];
 }
 
@@ -314,6 +329,8 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
     [UIApplication sharedApplication].idleTimerDisabled = NO;
     [UIApplication sharedApplication].statusBarStyle = [IOTheme shared].dark
         ? UIStatusBarStyleLightContent : UIStatusBarStyleDefault;
+    [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nil;
+    [self quitarMandoRemoto];
 }
 
 - (void)viewDidLayoutSubviews {
@@ -547,6 +564,8 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
     self.tiempoTotal.text = @"0:00";
     [self.cargando startAnimating];
     [self actualizarInfo];
+    [self actualizarNowPlaying];
+    self.ultimaActualizacionNowPlaying = 0.0;
     [self.view setNeedsLayout];
 
     if (!self.esVideo) {
@@ -607,6 +626,7 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
             fuerte.caratula.image = imagen;
             fuerte.fondo.image = imagen;
             fuerte.velo.hidden = (imagen == nil);
+            [fuerte actualizarNowPlaying];
         });
     }];
 }
@@ -620,6 +640,7 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
     AVPlayerItem *item = (AVPlayerItem *)object;
     if (item.status == AVPlayerItemStatusReadyToPlay) {
         [self.cargando stopAnimating];
+        [self actualizarNowPlaying];
     } else if (item.status == AVPlayerItemStatusFailed) {
         [self.cargando stopAnimating];
         if (self.errorMostrado) { return; }
@@ -654,6 +675,13 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
     self.tiempoActual.text = [self formatearTiempo:actual];
     self.tiempoTotal.text = [self formatearTiempo:total];
     [self actualizarBotonPlay];
+
+    // La pantalla de bloqueo extrapola el avance con la velocidad; basta con
+    // refrescar de vez en cuando para no escribir en MediaPlayer 2 veces/s.
+    if (fabs(actual - self.ultimaActualizacionNowPlaying) >= 2.0) {
+        self.ultimaActualizacionNowPlaying = actual;
+        [self actualizarNowPlaying];
+    }
 }
 
 - (NSString *)formatearTiempo:(double)segundos {
@@ -664,6 +692,114 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
     int s = total % 60;
     if (h > 0) { return [NSString stringWithFormat:@"%d:%02d:%02d", h, m, s]; }
     return [NSString stringWithFormat:@"%d:%02d", m, s];
+}
+
+#pragma mark - Pantalla de bloqueo
+
+- (void)configurarMandoRemoto {
+    if (self.mandoConfigurado) { return; }
+    MPRemoteCommandCenter *centro = [MPRemoteCommandCenter sharedCommandCenter];
+
+    [centro.playCommand addTarget:self action:@selector(comandoReproducir:)];
+    [centro.pauseCommand addTarget:self action:@selector(comandoPausar:)];
+    [centro.nextTrackCommand addTarget:self action:@selector(comandoSiguiente:)];
+    [centro.previousTrackCommand addTarget:self action:@selector(comandoAnterior:)];
+    centro.playCommand.enabled = YES;
+    centro.pauseCommand.enabled = YES;
+    centro.nextTrackCommand.enabled = YES;
+    centro.previousTrackCommand.enabled = YES;
+
+    if ([centro respondsToSelector:@selector(changePlaybackPositionCommand)]) {
+        [centro.changePlaybackPositionCommand addTarget:self
+            action:@selector(comandoPosicion:)];
+        centro.changePlaybackPositionCommand.enabled = YES;
+    }
+    self.mandoConfigurado = YES;
+}
+
+- (void)quitarMandoRemoto {
+    if (!self.mandoConfigurado) { return; }
+    MPRemoteCommandCenter *centro = [MPRemoteCommandCenter sharedCommandCenter];
+    [centro.playCommand removeTarget:self];
+    [centro.pauseCommand removeTarget:self];
+    [centro.nextTrackCommand removeTarget:self];
+    [centro.previousTrackCommand removeTarget:self];
+    if ([centro respondsToSelector:@selector(changePlaybackPositionCommand)]) {
+        [centro.changePlaybackPositionCommand removeTarget:self];
+    }
+    self.mandoConfigurado = NO;
+}
+
+- (MPRemoteCommandHandlerStatus)comandoReproducir:(MPRemoteCommandEvent *)evento {
+    if (self.reproductor.rate == 0.0) { [self alternarPlay]; }
+    return MPRemoteCommandHandlerStatusSuccess;
+}
+
+- (MPRemoteCommandHandlerStatus)comandoPausar:(MPRemoteCommandEvent *)evento {
+    if (self.reproductor.rate != 0.0) { [self alternarPlay]; }
+    return MPRemoteCommandHandlerStatusSuccess;
+}
+
+- (MPRemoteCommandHandlerStatus)comandoSiguiente:(MPRemoteCommandEvent *)evento {
+    [self irSiguiente:nil];
+    return MPRemoteCommandHandlerStatusSuccess;
+}
+
+- (MPRemoteCommandHandlerStatus)comandoAnterior:(MPRemoteCommandEvent *)evento {
+    [self irAnterior];
+    return MPRemoteCommandHandlerStatusSuccess;
+}
+
+- (MPRemoteCommandHandlerStatus)comandoPosicion:
+    (MPChangePlaybackPositionCommandEvent *)evento {
+    double segundos = evento.positionTime;
+    if (isnan(segundos) || segundos < 0) { segundos = 0; }
+    [self.reproductor seekToTime:CMTimeMakeWithSeconds(segundos, NSEC_PER_SEC)
+        toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+    self.ultimaActualizacionNowPlaying = 0.0;
+    [self actualizarNowPlaying];
+    return MPRemoteCommandHandlerStatusSuccess;
+}
+
+- (void)actualizarNowPlaying {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self actualizarNowPlaying];
+        });
+        return;
+    }
+    MPNowPlayingInfoCenter *centro = [MPNowPlayingInfoCenter defaultCenter];
+    if (self.esVideo || self.rutas.count == 0 ||
+        self.indice < 0 || self.indice >= (NSInteger)self.rutas.count) {
+        centro.nowPlayingInfo = nil;
+        return;
+    }
+
+    NSString *ruta = self.rutas[self.indice];
+    NSString *carpeta = [ruta stringByDeletingLastPathComponent];
+    NSMutableDictionary *info = [NSMutableDictionary dictionary];
+    info[MPMediaItemPropertyTitle] = [ruta lastPathComponent];
+    info[MPMediaItemPropertyArtist] = [carpeta lastPathComponent];
+    info[MPMediaItemPropertyAlbumTitle] = [carpeta lastPathComponent];
+
+    CMTime duracion = self.itemActual.duration;
+    if (CMTIME_IS_VALID(duracion) && !CMTIME_IS_INDEFINITE(duracion)) {
+        double total = CMTimeGetSeconds(duracion);
+        if (total > 0 && !isnan(total)) {
+            info[MPMediaItemPropertyPlaybackDuration] = @(total);
+        }
+    }
+
+    double actual = CMTimeGetSeconds(self.reproductor.currentTime);
+    if (isnan(actual) || actual < 0) { actual = 0; }
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(actual);
+    info[MPNowPlayingInfoPropertyPlaybackRate] = @(self.reproductor.rate);
+
+    if (self.caratula.image) {
+        info[MPMediaItemPropertyArtwork] =
+            [[MPMediaItemArtwork alloc] initWithImage:self.caratula.image];
+    }
+    centro.nowPlayingInfo = info;
 }
 
 - (void)actualizarBotonPlay {
@@ -694,6 +830,7 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
         if (self.velocidad != 1.0) { self.reproductor.rate = self.velocidad; }
     }
     [self actualizarBotonPlay];
+    [self actualizarNowPlaying];
     [self reiniciarAutoOcultar];
 }
 
@@ -701,7 +838,9 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
     CMTime actual = self.reproductor.currentTime;
     if (CMTIME_IS_VALID(actual) && CMTimeGetSeconds(actual) > 3.0) {
         [self.reproductor seekToTime:kCMTimeZero];
+        self.ultimaActualizacionNowPlaying = 0.0;
         [self actualizarBotonPlay];
+        [self actualizarNowPlaying];
         return;
     }
     [self cargarIndice:self.indice - 1 reproducir:YES];
@@ -728,6 +867,7 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
         } else {
             [self.reproductor pause];
             [self actualizarBotonPlay];
+            [self actualizarNowPlaying];
             return;
         }
     }
@@ -740,6 +880,7 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
         [self.reproductor play];
         if (self.velocidad != 1.0) { self.reproductor.rate = self.velocidad; }
         [self actualizarBotonPlay];
+        [self actualizarNowPlaying];
         return;
     }
     [self avanzarAutomatico:YES];
@@ -779,6 +920,7 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
             [fuerte.reproductor play];
             if (fuerte.velocidad != 1.0) { fuerte.reproductor.rate = fuerte.velocidad; }
         }
+        [fuerte actualizarNowPlaying];
     }];
 }
 
@@ -819,29 +961,77 @@ static void *IOPlayerStatusContext = &IOPlayerStatusContext;
     [self.botonVelocidad setTitle:texto forState:UIControlStateNormal];
     if (self.reproductor.rate != 0.0) {
         self.reproductor.rate = self.velocidad;
+        [self actualizarNowPlaying];
     }
 }
 
 - (void)mostrarLista {
-    if (self.rutas.count == 0) { return; }
-    NSMutableArray *acciones = [NSMutableArray array];
-    __weak IOMediaPlayerViewController *debil = self;
-    NSUInteger limite = MIN(self.rutas.count, (NSUInteger)100);
-    for (NSUInteger i = 0; i < limite; i++) {
-        NSString *ruta = self.rutas[i];
-        NSString *nombre = [ruta lastPathComponent];
-        BOOL actual = ((NSInteger)i == self.indice);
-        NSString *titulo = [NSString stringWithFormat:@"%@%@",
-                            actual ? @"✓ " : @"", nombre];
-        NSInteger indice = (NSInteger)i;
-        [acciones addObject:[IODialogAction actionWithTitle:titulo
-            style:(actual ? IODialogActionStyleSelected : IODialogActionStyleDefault)
-            handler:^{ [debil cargarIndice:indice reproducir:YES]; }]];
+    if (self.rutas.count == 0) {
+        [IODialog showAlertIn:self title:@"Lista vacia"
+                      message:@"No hay pistas en esta carpeta."];
+        return;
     }
-    [IODialog showSheetIn:self
-                    title:[NSString stringWithFormat:@"Lista · %lu pistas",
-                           (unsigned long)self.rutas.count]
-                  actions:acciones];
+    IOPlaylistViewController *lista = [[IOPlaylistViewController alloc] init];
+    lista.dataSource = self;
+    // OverFullScreen deja el reproductor vivo detras: la musica no se corta.
+    lista.modalPresentationStyle = UIModalPresentationOverFullScreen;
+    lista.modalTransitionStyle = UIModalTransitionStyleCoverVertical;
+    [self presentViewController:lista animated:YES completion:nil];
+}
+
+#pragma mark - IOPlaylistDataSource
+
+- (NSInteger)playlistNumberOfItems {
+    return (NSInteger)self.rutas.count;
+}
+
+- (NSString *)playlistPathAtIndex:(NSInteger)index {
+    if (index < 0 || index >= (NSInteger)self.rutas.count) { return nil; }
+    return self.rutas[index];
+}
+
+- (NSInteger)playlistCurrentIndex {
+    return self.indice;
+}
+
+- (void)playlistSelectIndex:(NSInteger)index {
+    if (index < 0 || index >= (NSInteger)self.rutas.count) { return; }
+    [self cargarIndice:index reproducir:YES];
+}
+
+- (void)playlistRemoveIndex:(NSInteger)index {
+    if (index < 0 || index >= (NSInteger)self.rutas.count) { return; }
+    BOOL estabaReproduciendo = (self.reproductor.rate != 0.0);
+    BOOL eraActual = (index == self.indice);
+    [self.rutas removeObjectAtIndex:index];
+
+    if (self.rutas.count == 0) {
+        [self.reproductor pause];
+        self.indice = 0;
+        self.esVideo = NO;
+        self.titulo.text = @"Lista vacia";
+        self.subtitulo.text = @"No hay pistas";
+        self.deslizador.value = 0.0;
+        self.tiempoActual.text = @"0:00";
+        self.tiempoTotal.text = @"0:00";
+        [self actualizarBotonPlay];
+        [self actualizarNowPlaying];
+        return;
+    }
+
+    if (index < self.indice) {
+        self.indice -= 1;
+        [self actualizarInfo];
+        [self actualizarNowPlaying];
+    } else if (eraActual) {
+        if (self.indice >= (NSInteger)self.rutas.count) {
+            self.indice = (NSInteger)self.rutas.count - 1;
+        }
+        [self cargarIndice:self.indice reproducir:estabaReproduciendo];
+    } else {
+        [self actualizarInfo];
+        [self actualizarNowPlaying];
+    }
 }
 
 - (void)alternarControles {

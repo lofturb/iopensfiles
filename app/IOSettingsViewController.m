@@ -251,7 +251,12 @@
     [[IOSettings shared] setValue:@(interruptor.isOn) forKey:clave];
 
     if ([clave isEqualToString:@"darkMode"]) {
-        [IOTheme applyDark:interruptor.isOn];
+        // Fuera del propio evento del UISwitch: aplicar el tema recarga las
+        // tablas y no conviene hacerlo a mitad de la animacion del control.
+        BOOL oscuro = interruptor.isOn;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [IOTheme applyDark:oscuro];
+        });
     } else if ([clave isEqualToString:@"thumbnails"]) {
         [[IOFileIcons shared] clearCache];
     }

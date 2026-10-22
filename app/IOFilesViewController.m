@@ -175,6 +175,9 @@
     self.navigationItem.rightBarButtonItem = menu;
 
     if (self.showsSidebarToggle) {
+        // No se sustituye el boton Atras: se anade el acceso al lateral al
+        // lado. Asi siempre queda una forma de volver a Inicio.
+        self.navigationItem.leftItemsSupplementBackButton = YES;
         UIBarButtonItem *lateral = [self itemGlifo:IOGlyphMenu
                                             accion:@selector(pulsarLateral)];
         self.navigationItem.leftBarButtonItem = lateral;

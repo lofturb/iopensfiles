@@ -9,7 +9,7 @@ claro/oscuro completo.
 
 - **Dispositivo objetivo:** iPad mini 1 (iPad2,6), iOS 9.3.6, armv7f, 512 MB,
   1024×768 (no retina).
-- **Bundle:** `com.lofturb.iopensfiles` — versión `1.1.0`.
+- **Bundle:** `com.lofturb.iopensfiles` — versión `1.2.0`.
 - **Sin Mac, sin Xcode, sin Swift, sin storyboards.** Todo Objective-C, en
   código, compilado con Theos e firmado con `ldid`.
 
@@ -24,8 +24,9 @@ claro/oscuro completo.
   recientes y cachés; información del sistema y ajustes.
 - Recorre todo el sistema de ficheros: `/`, `/var`, `/Applications`, `/System`,
   contenedores de apps...
-- Barra lateral con Lugares, Favoritos y Recientes; se ve dividida en
-  horizontal y se superpone en vertical.
+- Barra lateral con **Inicio**, Lugares, Favoritos y Recientes; se ve dividida
+  en horizontal y se superpone en vertical. «Inicio» vuelve a la portada desde
+  cualquier carpeta.
 - Ruta visible bajo el título, apertura de carpetas apilando navegadores.
 - Búsqueda **recursiva** desde la carpeta actual (hasta 500 resultados).
 - «Ir a una ruta...» y «Ir a la raíz» desde el menú y desde Inicio.
@@ -64,11 +65,16 @@ claro/oscuro completo.
 **Visores**
 - **Texto**: visor/editor con búsqueda y guardado (UTF-8 con reserva Latin-1),
   tamaño de fuente ajustable.
-- **Imágenes**: pantalla completa, zoom (pellizco y doble toque) y paso entre
-  las imágenes de la carpeta.
-- **Audio y vídeo**: `AVPlayer` con lista de la carpeta, aleatorio, repetir
-  (todo/una), anterior/siguiente, control de velocidad, carátula ID3 y audio en
-  segundo plano.
+- **Imágenes**: pantalla completa, zoom (pellizco y doble toque), paso entre las
+  imágenes de la carpeta y barra de acciones para **compartir**, **guardar en
+  Fotos**, **preparar como fondo de pantalla** (iOS 9 obliga a confirmarlo en
+  Ajustes) y ver información y dimensiones.
+- **Audio y vídeo**: `AVPlayer` con aleatorio, repetir (todo/una),
+  anterior/siguiente y velocidad. La lista de reproducción es una pantalla
+  propia donde se puede elegir pista, **quitar solo de la lista** o **borrar el
+  archivo permanentemente**. La música sigue sonando con la pantalla bloqueada
+  y aparece en la pantalla de bloqueo con carátula y controles de
+  reproducir/pausar, anterior y siguiente. La carátula ID3 se usa como fondo.
 - **ZIP**: comprimir y extraer, con listado del contenido.
 
 **Integración**
@@ -98,7 +104,7 @@ La vía recomendada es **GitHub Actions** (no hace falta Mac):
 ```powershell
 git init
 git add .
-git commit -m "IOpenFiles 1.1.0"
+git commit -m "IOpenFiles 1.2.0"
 git remote add origin https://github.com/TU-USUARIO/iopensfiles.git
 git push -u origin main
 ```
@@ -184,8 +190,9 @@ IOpenFiles/
 │   ├── IOFilesViewController    navegador y todas las acciones
 │   ├── IOPropertiesViewController  propiedades, chmod/chown
 │   ├── IOTextEditorViewController  visor/editor de texto
-│   ├── IOImageViewController    visor de imagenes
+│   ├── IOImageViewController    visor de imagenes con compartir y fondo
 │   ├── IOMediaPlayerViewController reproductor con lista, aleatorio y velocidad
+│   ├── IOPlaylistViewController lista: elegir, quitar o borrar pistas
 │   ├── IOSettingsViewController    ajustes, papelera y mantenimiento
 │   ├── IORootContainerViewController  lateral + navegador (Inicio como raiz)
 │   └── Resources/               Info.plist, iconos y arranque (generados)

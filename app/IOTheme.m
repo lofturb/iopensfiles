@@ -15,13 +15,26 @@ NSString * const IOThemeDidChangeNotification = @"IOThemeDidChangeNotification";
 
 + (void)applyDark:(BOOL)dark {
     [IOTheme shared].dark = dark;
-    UIWindow *ventana = [[UIApplication sharedApplication] keyWindow];
-    ventana.tintColor = [IOTheme shared].accent;
-    ventana.backgroundColor = [IOTheme shared].background;
+
+    // Solo se tocan las ventanas normales de la aplicacion. Las ventanas
+    // internas de UIKit (teclado, efectos de texto, alertas del sistema)
+    // estan a un nivel superior y son transparentes: pintarles el fondo las
+    // convierte en una capa opaca que tapa toda la app al cambiar de tema.
+    UIWindow *ventana = nil;
     for (UIWindow *w in [[UIApplication sharedApplication] windows]) {
+        if (w.windowLevel != UIWindowLevelNormal) { continue; }
         w.tintColor = [IOTheme shared].accent;
         w.backgroundColor = [IOTheme shared].background;
+        if (!ventana) { ventana = w; }
     }
+    if (!ventana) {
+        ventana = [[UIApplication sharedApplication] keyWindow];
+    }
+    if (ventana && ventana.windowLevel == UIWindowLevelNormal) {
+        ventana.tintColor = [IOTheme shared].accent;
+        ventana.backgroundColor = [IOTheme shared].background;
+    }
+
     [UIApplication sharedApplication].statusBarStyle = dark
         ? UIStatusBarStyleLightContent : UIStatusBarStyleDefault;
     [[NSNotificationCenter defaultCenter]

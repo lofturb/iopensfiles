@@ -117,6 +117,8 @@
 
 #pragma mark - Panel lateral
 
+static NSString * const IOSidebarHomePath = @"io.iopensfiles.inicio";
+
 typedef NS_ENUM(NSInteger, IOSidebarSection) {
     IOSidebarSectionLugares = 0,
     IOSidebarSectionFavoritos,
@@ -179,6 +181,7 @@ typedef NS_ENUM(NSInteger, IOSidebarSection) {
 
 - (void)construirLugares {
     self.lugares = @[
+        @{ @"t": @"Inicio",         @"p": IOSidebarHomePath,                 @"g": @(IOGlyphHome) },
         @{ @"t": @"Raiz",           @"p": @"/",                              @"g": @(IOGlyphRoot) },
         @{ @"t": @"Medios",         @"p": @"/var/mobile/Media",              @"g": @(IOGlyphFolder) },
         @{ @"t": @"Documentos",     @"p": @"/var/mobile/Documents",          @"g": @(IOGlyphText) },
@@ -289,7 +292,9 @@ typedef NS_ENUM(NSInteger, IOSidebarSection) {
         celda.glifo = (IOGlyph)[fila[@"g"] integerValue];
         celda.esFavorito = NO;
         celda.contador.text = @"";
-        celda.selected = [self.selectedPath isEqualToString:fila[@"p"]];
+        BOOL esInicio = [fila[@"p"] isEqualToString:IOSidebarHomePath];
+        celda.selected = esInicio ? (self.selectedPath.length == 0)
+                                  : [self.selectedPath isEqualToString:fila[@"p"]];
     } else {
         NSString *ruta = filas[indexPath.row];
         celda.titulo.text = [ruta lastPathComponent];
@@ -314,6 +319,16 @@ typedef NS_ENUM(NSInteger, IOSidebarSection) {
         ruta = filas[indexPath.row];
     }
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if ([ruta isEqualToString:IOSidebarHomePath]) {
+        self.selectedPath = nil;
+        [tableView reloadData];
+        if ([self.delegate respondsToSelector:@selector(sidebarDidSelectHome:)]) {
+            [self.delegate sidebarDidSelectHome:self];
+        }
+        return;
+    }
+
     self.selectedPath = ruta;
     [tableView reloadData];
     if (self.delegate) {

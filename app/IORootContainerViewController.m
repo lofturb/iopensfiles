@@ -212,6 +212,18 @@ static const CGFloat IOUmbralDiv = 900.0;
     }
 }
 
+- (void)sidebarDidSelectHome:(IOSidebarViewController *)sidebar {
+    // Inicio es la raiz del navegador: basta con volver al primer controlador.
+    [self.navegador popToRootViewControllerAnimated:YES];
+    self.lateral.selectedPath = nil;
+    [self.lateral reloadData];
+
+    if (!self.modoDividido) {
+        self.lateralVisible = NO;
+        [self aplicarLayout:YES];
+    }
+}
+
 - (void)recargarLateral {
     [self.lateral reloadData];
 }
