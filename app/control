@@ -1,0 +1,9 @@
+Package: com.lofturb.iopensfiles
+Name: IOpenFiles
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Gestor de archivos con acceso al sistema para iOS 9 (armv7).
+Homepage: https://github.com/lofturb/iopensfiles
+Maintainer: lofturb
+Author: lofturb
+Section: Applications

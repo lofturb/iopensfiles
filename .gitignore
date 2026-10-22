@@ -1,0 +1,18 @@
+# Artefactos de compilacion
+.theos/
+packages/
+*.ipa
+!entrega-web/entrega/*.ipa
+*.deb
+*.dylib
+
+# Recursos generados por tools/generar_recursos.py (los crea el CI)
+app/recursos-generados.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# Sistema
+.DS_Store
+Thumbs.db

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Identidad. Debe coincidir con CFBundleIdentifier. Sin esto el llavero
+	     devuelve -34018 y no se puede guardar ninguna sesion. -->
+	<key>application-identifier</key>
+	<string>com.lofturb.iopensfiles</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>com.lofturb</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>com.lofturb.iopensfiles</string>
+	</array>
+
+	<!-- App de jailbreak: sin sandbox, tratada como app de plataforma. -->
+	<key>platform-application</key>
+	<true/>
+	<key>com.apple.private.security.no-sandbox</key>
+	<true/>
+	<key>com.apple.private.security.no-container</key>
+	<true/>
+
+	<!-- Acceso amplio al sistema de ficheros: la app es un gestor de archivos.
+	     Estas excepciones saltan el filtro de rutas de iOS; el permiso real de
+	     escritura sigue dependiendo de los permisos Unix de cada ruta (para
+	     zonas propiedad de root hace falta un helper con root). -->
+	<key>com.apple.security.exception.files.absolute-path.read-write</key>
+	<array>
+		<string>/</string>
+		<string>/private/</string>
+		<string>/var/</string>
+		<string>/var/mobile/</string>
+		<string>/var/mobile/Media/</string>
+		<string>/var/mobile/Documents/</string>
+		<string>/private/var/</string>
+	</array>
+	<key>com.apple.security.exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/</string>
+		<string>/System/</string>
+	</array>
+
+	<key>get-task-allow</key>
+	<true/>
+</dict>
+</plist>
