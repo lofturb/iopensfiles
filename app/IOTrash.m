@@ -114,7 +114,7 @@ static NSString * const kIOTrashIndexKey = @"IO.trashIndex";
         return NO;
     }
 
-    NSString *original = self.originalPathForItemNamed(name);
+    NSString *original = [self originalPathForItemNamed:name];
     NSString *carpeta = original.length ? [original stringByDeletingLastPathComponent]
                                         : @"/var/mobile/Media";
     BOOL esDir = NO;

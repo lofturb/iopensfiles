@@ -186,7 +186,7 @@
         boton.enabled = accion.enabled;
     }
 
-    [self setNeedsLayout];
+    [self.view setNeedsLayout];
 }
 
 #pragma mark - Construccion
